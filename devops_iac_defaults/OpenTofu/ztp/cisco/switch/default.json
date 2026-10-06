@@ -1,0 +1,54 @@
+{
+  "device_type": "switch",
+  "vendor": "cisco",
+  "config_template": "ios-xe",
+  "configuration": {
+    "hostname": "cisco-switch-ztp",
+    "interfaces": [
+      {
+        "candidates": [
+          "Vlan1"
+        ],
+        "ip": "dhcp",
+        "description": "Management"
+      },
+      {
+        "candidates": [
+          "GigabitEthernet1/0/1",
+          "GigabitEthernet0/1",
+          "GigabitEthernet0/0"
+        ],
+        "description": "Access Port 1",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      },
+      {
+        "candidates": [
+          "GigabitEthernet1/0/2",
+          "GigabitEthernet0/2",
+          "GigabitEthernet0/1"
+        ],
+        "description": "Access Port 2",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      }
+    ],
+    "static_routes": [],
+    "default_gateway": "192.168.2.1",
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

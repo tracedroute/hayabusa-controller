@@ -1,0 +1,15 @@
+---
+- name: Hayabusa — installed PLC driver inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: List Hayabusa PLC drivers and Python module availability
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" drivers
+      register: plc_drivers
+      changed_when: false
+
+    - name: Show driver status
+      ansible.builtin.debug:
+        msg: "{{ plc_drivers.stdout | from_json }}"

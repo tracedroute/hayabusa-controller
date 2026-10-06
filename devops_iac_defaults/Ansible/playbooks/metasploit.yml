@@ -1,0 +1,53 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — Metasploit
+- name: "SECops — Metasploit (msfconsole)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: "{{ secops_execute | default(false) }}"
+    secops_target: "{{ secops_target | default('', true) }}"
+    secops_msf_resource: "{{ secops_msf_resource | default('', true) }}"
+    secops_msf_search: "{{ secops_msf_search | default('smb', true) }}"
+    secops_timeout_sec: "{{ secops_timeout_sec | default(300) | int }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: msfconsole
+          target: "{{ secops_target | default('(unset)', true) }}"
+          execute: "{{ secops_execute }}"
+          note: "Lab only. Prefer a resource script path via -e secops_msf_resource=…"
+
+    - name: Locate msfconsole
+      ansible.builtin.command: bash -lc "command -v msfconsole || true"
+      register: which_tool
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "msfconsole={{ which_tool.stdout | trim | default('(not found)') }}"
+
+    - name: Search modules (safe default)
+      ansible.builtin.shell: |
+        printf 'search {{ secops_msf_search }}\nexit\n' | msfconsole -q -x "search {{ secops_msf_search }}; exit"
+      register: tool_out
+      changed_when: false
+      when: secops_execute | bool and (secops_msf_resource | length) == 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Run resource script when provided
+      ansible.builtin.command:
+        argv: [msfconsole, -q, -r, "{{ secops_msf_resource }}"]
+      register: tool_out_r
+      changed_when: false
+      when: secops_execute | bool and (secops_msf_resource | length) > 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Show output
+      ansible.builtin.debug:
+        msg: "{{ (tool_out.stdout_lines if tool_out is defined else []) + (tool_out_r.stdout_lines if tool_out_r is defined else []) }}"
+      when: secops_execute | bool

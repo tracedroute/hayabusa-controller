@@ -1,0 +1,78 @@
+---
+- name: Modbus TCP — write holding register and verify read-back
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    modbus_read_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: "{{ modbus_verify_address | default(100) | int }}"
+      count: 1
+      timeout: "{{ plc_timeout | float }}"
+    modbus_write_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      write_function_code: 6
+      address: "{{ modbus_verify_address | default(100) | int }}"
+      value: "{{ modbus_verify_write_value | default(999) | int }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_modbus_write=true for Modbus write verification.
+      when: not (allow_modbus_write | default(false) | bool)
+
+    - name: Read register before write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MODBUS_READ
+      environment:
+        MODBUS_READ: "{{ modbus_read_payload | to_json }}"
+      register: modbus_before
+      changed_when: false
+
+    - name: Write holding register
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env MODBUS_WRITE
+      environment:
+        MODBUS_WRITE: "{{ modbus_write_payload | to_json }}"
+      register: modbus_write
+      changed_when: true
+
+    - name: Read register after write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MODBUS_READ
+      environment:
+        MODBUS_READ: "{{ modbus_read_payload | to_json }}"
+      register: modbus_after
+      changed_when: false
+
+    - name: Parse Modbus results
+      ansible.builtin.set_fact:
+        modbus_before_result: "{{ modbus_before.stdout | from_json }}"
+        modbus_write_result: "{{ modbus_write.stdout | from_json }}"
+        modbus_after_result: "{{ modbus_after.stdout | from_json }}"
+
+    - name: Assert Modbus write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - modbus_write_result.success | bool
+          - modbus_after_result.success | bool
+          - modbus_after_result.result['values'][0] == (modbus_verify_write_value | default(999) | int)
+        fail_msg: >-
+          Modbus verify failed at address {{ modbus_verify_address | default(100) }}.
+          before={{ modbus_before_result }} write={{ modbus_write_result }} after={{ modbus_after_result }}
+
+    - name: Show Modbus round-trip
+      ansible.builtin.debug:
+        msg:
+          address: "{{ modbus_verify_address }}"
+          before: "{{ modbus_before_result.result['values'][0] }}"
+          written: "{{ modbus_verify_write_value }}"
+          after: "{{ modbus_after_result.result['values'][0] }}"

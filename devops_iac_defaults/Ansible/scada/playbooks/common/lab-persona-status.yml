@@ -1,0 +1,29 @@
+---
+- name: Lab node — active PLC emulator persona status
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars: {}
+  tasks:
+    - name: Query plc-emulator status on lab node
+      ansible.builtin.command:
+        argv:
+          - sshpass
+          - -p
+          - "{{ lab_ssh_pass | default('pnet') }}"
+          - ssh
+          - -o
+          - StrictHostKeyChecking=no
+          - -o
+          - PreferredAuthentications=password
+          - -o
+          - PubkeyAuthentication=no
+          - "{{ lab_ssh_user | default('pnet') }}@{{ lab_host | default(plc_host) }}"
+          - cd ~/plc-emulator-lab && ./plc-emulator status
+      register: persona_status
+      changed_when: false
+      failed_when: persona_status.rc != 0
+
+    - name: Show persona status
+      ansible.builtin.debug:
+        msg: "{{ persona_status.stdout_lines }}"

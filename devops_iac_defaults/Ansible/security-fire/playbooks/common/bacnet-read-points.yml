@@ -1,0 +1,62 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: BACnet — Who-Is / optional ReadProperty for life-safety points
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    bacnet_host: "{{ lookup('env', 'BACNET_HOST') | default(lookup('env', 'SECURITY_PANEL_HOST') | default('', true), true) }}"
+    bacnet_object_ids: "{{ lookup('env', 'BACNET_OBJECT_IDS') | default('binaryInput,1 binaryInput,2 analogValue,1', true) }}"
+    bacnet_object_list: "{{ bacnet_object_ids.split() | map('trim') | select('length') | list }}"
+    security_probe: "{{ playbook_dir }}/../scripts/security_probe.py"
+  tasks:
+    - name: Safety — read-only BACnet
+      ansible.builtin.debug:
+        msg:
+          - "BACnet reads are informational only."
+          - "Do not write present-value on life-safety objects from Ansible."
+
+    - name: UDP probe BACnet/IP port when host set
+      ansible.builtin.command:
+        cmd: python3 "{{ security_probe }}" udp-probe --host "{{ bacnet_host }}" --port 47808
+      register: bacnet_udp
+      changed_when: false
+      failed_when: false
+      when: bacnet_host | length > 0
+
+    - name: Show UDP probe result
+      ansible.builtin.debug:
+        msg: "{{ bacnet_udp.stdout | default('{}') | from_json }}"
+      when: bacnet_udp is defined and bacnet_udp.stdout is defined
+
+    - name: BACnet Who-Is (optional bacpypes3)
+      ansible.builtin.command:
+        cmd: python3 "{{ security_probe }}" bacnet-whois --timeout 3
+      register: bacnet_whois
+      changed_when: false
+      failed_when: false
+
+    - name: Show Who-Is result
+      ansible.builtin.debug:
+        msg: "{{ bacnet_whois.stdout | default('{}') | from_json }}"
+
+    - name: Optional ReadProperty for configured objects
+      ansible.builtin.command:
+        cmd: >-
+          python3 "{{ security_probe }}" bacnet-read
+          --address "{{ bacnet_host }}"
+          --object-id "{{ item }}"
+          --property present-value
+      loop: "{{ bacnet_object_list }}"
+      register: bacnet_reads
+      changed_when: false
+      failed_when: false
+      when: bacnet_host | length > 0
+
+    - name: Show ReadProperty results
+      ansible.builtin.debug:
+        msg: "{{ item.stdout | default('{}') | from_json }}"
+      loop: "{{ bacnet_reads.results | default([]) }}"
+      when: bacnet_host | length > 0
+      loop_control:
+        label: "{{ item.item | default('') }}"

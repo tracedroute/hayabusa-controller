@@ -1,0 +1,39 @@
+---
+# Inventory for ubuntu-pnetnode PLC/SCADA emulator lab (192.168.2.137).
+# SSH: pnet / pnet — start personas with ~/plc-emulator-lab/plc-emulator start <name>
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+  vars:
+    plc_host: "192.168.2.137"
+    lab_host: "192.168.2.137"
+    lab_ssh_user: "pnet"
+    lab_ssh_pass: "pnet"
+    plc_timeout: 5
+    modbus_holding_count: 5
+    siemens_slot: 2
+    ab_path: "192.168.2.137/0"
+    ab_tags: "MotorRun,MotorSpeed"
+    beckhoff_ams_net_id: "192.168.2.137.1.1"
+    beckhoff_rest_port: 8080
+    mitsubishi_port: 5007
+    mitsubishi_device: "D0"
+    omron_fins_port: 9600
+    opcua_port: 50000
+    opcua_node_id: "ns=3;s=FastUInt1"
+    opcua_security: auto
+    openplc_v4_port: 8443
+    openplc_v4_user: labuser
+    openplc_v4_pass: "LabOps123!"
+    ab_cip_engine: cpppo
+    allow_modbus_write: true
+    allow_ab_write: true
+    allow_beckhoff_write: true
+    allow_mitsubishi_write: true
+    allow_omron_write: true
+    allow_s7_write: true
+    allow_opcua_write: true
+    beckhoff_symbols: "test1,test2,GVL.test1"
+    strict: false

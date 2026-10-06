@@ -1,0 +1,32 @@
+configure terminal
+hostname Arista-vEOS
+!
+ip routing
+!
+interface Management1
+ ip address 192.168.2.120 255.255.255.0
+!
+interface Ethernet1
+ description Primary-Data
+ ip address 192.168.100.1 255.255.255.0
+ no shutdown
+!
+interface Ethernet2
+ description Secondary-Data
+ ip address 192.168.101.1 255.255.255.0
+ no shutdown
+!
+username admin privilege 15 secret admin123
+!
+ip ssh version 2
+!
+line vty 0 10
+ transport input ssh
+ login local
+!
+ip route 0.0.0.0 0.0.0.0 192.168.2.1
+!
+spanning-tree mode rapid-pvst
+!
+end
+write memory

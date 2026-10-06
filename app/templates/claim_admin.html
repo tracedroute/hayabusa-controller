@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Claim admin · Hayabusa Controller</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, #1a2a3a 0%, #0b1220 55%);
+      color: #e2e8f0;
+    }
+    .card {
+      width: min(480px, 92vw); padding: 1.5rem 1.4rem 1.35rem;
+      border: 1px solid #1e293b; border-radius: 14px; background: #111827;
+      box-shadow: 0 20px 50px rgba(0,0,0,.4);
+    }
+    h1 { margin: 0 0 .35rem; font-size: 1.25rem; font-weight: 650; }
+    p { margin: 0 0 .85rem; color: #94a3b8; font-size: .92rem; line-height: 1.45; }
+    .err {
+      margin: 0 0 .85rem; padding: .55rem .7rem; border-radius: 8px;
+      background: rgba(185,28,28,.18); color: #fecaca; font-size: .86rem;
+    }
+    .choices { display: grid; gap: .65rem; margin-top: .5rem; }
+    a.choice {
+      display: block; text-decoration: none; color: inherit;
+      padding: .85rem 1rem; border-radius: 10px; border: 1px solid #334155;
+      background: #0f172a; transition: border-color .15s, background .15s;
+    }
+    a.choice:hover { border-color: #5d93a2; background: #132033; }
+    a.choice.preferred {
+      border-color: #5d93a2;
+      box-shadow: 0 0 0 1px rgba(93,147,162,.35);
+      background: linear-gradient(180deg, #152636 0%, #0f172a 100%);
+    }
+    .badge {
+      display: inline-block; margin-left: .4rem; padding: .12rem .45rem;
+      border-radius: 999px; font-size: .68rem; font-weight: 700;
+      letter-spacing: .03em; text-transform: uppercase;
+      background: #5d93a2; color: #041016;
+    }
+    .title { font-weight: 650; font-size: 1rem; }
+    .sub { margin: .25rem 0 0; color: #8faabe; font-size: .82rem; }
+    .note {
+      margin-top: 1rem; padding-top: .85rem; border-top: 1px solid #1e293b;
+      color: #7dd3fc; font-size: .8rem; line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Become the Owner / admin</h1>
+    <p>
+      The first-launch password is no longer valid. Whitelist one identity below —
+      that account becomes the default Owner/admin. <strong>2FA must be enabled</strong>
+      on the provider account (we check via their API).
+    </p>
+    {% if error %}
+    <div class="err">{{ error }}</div>
+    {% endif %}
+    <div class="choices">
+      <a class="choice preferred" href="/auth/github/start">
+        <div class="title">GitHub <span class="badge">Preferred</span></div>
+        <p class="sub">Best for GitOps and owned-publish. Requires GitHub 2FA.</p>
+      </a>
+      <a class="choice" href="/auth/google/start">
+        <div class="title">Google</div>
+        <p class="sub">Requires Google 2-Step Verification on this sign-in.</p>
+      </a>
+      <a class="choice" href="/auth/discord/start">
+        <div class="title">Discord</div>
+        <p class="sub">Requires Discord MFA enabled on the account.</p>
+      </a>
+    </div>
+    <p class="note">
+      After this, you can whitelist more people under Administration → Sign-in,
+      and optionally turn the site-wide 2FA requirement on or off for those accounts.
+    </p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,106 @@
+{
+  "vendor": "Aruba",
+  "version": "1.0.0",
+  "description": "Aruba/HPE Local ZTP Provisioning Scripts",
+  "device_families": [
+    {
+      "id": "aos-cx-6300",
+      "name": "AOS-CX 6300 Series",
+      "models": [
+        "6300",
+        "6300F",
+        "6300M"
+      ],
+      "dispatch_script": "aos-cx-6300-dispatch",
+      "default_credentials": {
+        "username": "admin",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "management_interface": "Management 1/1/1",
+      "default_ip": "192.168.2.90/24"
+    },
+    {
+      "id": "aos-cx-8300",
+      "name": "AOS-CX 8300 Series",
+      "models": [
+        "8300",
+        "8300F"
+      ],
+      "dispatch_script": "aos-cx-8300-dispatch",
+      "default_credentials": {
+        "username": "admin",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "management_interface": "Management 1/1/1",
+      "default_ip": "192.168.2.91/24"
+    },
+    {
+      "id": "aos-s",
+      "name": "AOS-S Switches",
+      "models": [
+        "2530",
+        "2540",
+        "2930",
+        "3810",
+        "5400"
+      ],
+      "dispatch_script": "aos-s-dispatch",
+      "default_credentials": {
+        "username": "admin",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "management_interface": "Management",
+      "default_ip": "192.168.2.92/24"
+    }
+  ],
+  "dhcp_boot_options": {
+    "protocol": "TFTP",
+    "boot_trigger": "DHCP Option 67",
+    "server": "192.168.2.1",
+    "tftp_root": "aruba"
+  },
+  "editable": true,
+  "last_updated": "2026-10-06T03:48:53Z",
+  "dispatch_scripts": [
+    {
+      "filename": "aos-cx-6300-dispatch",
+      "title": "Aos Cx 6300 Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-cx-8300-dispatch",
+      "title": "Aos Cx 8300 Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-cx-dispatch",
+      "title": "Aos Cx Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-s-dispatch",
+      "title": "Aos S Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    }
+  ],
+  "notes": "Dispatch scripts are working assets \u2014 manifest wiring only; CI verifies filenames exist on disk."
+}

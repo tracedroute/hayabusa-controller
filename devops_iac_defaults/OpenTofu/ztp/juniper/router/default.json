@@ -1,0 +1,93 @@
+{
+  "device_type": "router",
+  "vendor": "juniper",
+  "config_template": "junos",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "juniper-router-ztp",
+    "interfaces": [
+      {
+        "name": "ge-0/0/0",
+        "unit": 0,
+        "family": "inet",
+        "address": "dhcp",
+        "description": "WAN - ZTP Primary"
+      },
+      {
+        "name": "ge-0/0/1",
+        "unit": 0,
+        "family": "inet",
+        "address": "192.168.1.1/24",
+        "description": "LAN"
+      }
+    ],
+    "routing_options": {
+      "static_routes": [
+        {
+          "destination": "0.0.0.0/0",
+          "next_hop": "192.168.1.254",
+          "description": "Default Route"
+        }
+      ]
+    },
+    "protocols": {
+      "ssh": {
+        "enabled": true,
+        "port": 22,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": ["8.8.8.8", "1.1.1.1"]
+      },
+      "ospf": {
+        "enabled": false,
+        "areas": []
+      },
+      "bgp": {
+        "enabled": false,
+        "as_number": "",
+        "neighbors": []
+      }
+    },
+    "system_services": {
+      "telnet": {
+        "enabled": false
+      },
+      "ftp": {
+        "enabled": false
+      },
+      "web_management": {
+        "enabled": true,
+        "http": {
+          "enabled": true,
+          "port": 80
+        },
+        "https": {
+          "enabled": true,
+          "port": 443
+        }
+      }
+    },
+    "security": {
+      "zones": {
+        "trust": {
+          "interfaces": ["ge-0/0/1"]
+        },
+        "untrust": {
+          "interfaces": ["ge-0/0/0"]
+        }
+      },
+      "policies": [
+        {
+          "name": "allow-trust-to-untrust",
+          "from_zone": "trust",
+          "to_zone": "untrust",
+          "action": "accept",
+          "description": "Allow outbound traffic"
+        }
+      ]
+    }
+  }
+}

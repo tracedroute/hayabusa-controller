@@ -1,0 +1,8 @@
+---
+# Shared defaults for Ansible/Security playbooks.
+# Override at run time: ansible-playbook … -e secops_target=10.0.0.5 -e secops_execute=true
+secops_execute: false
+secops_target: ""
+secops_timeout_sec: 300
+# Optional vault key *names* (values resolved only on the controller):
+# secops_ssh_password: "{{ hayabusa_secret:lan_ssh_password }}"

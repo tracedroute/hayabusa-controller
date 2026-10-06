@@ -1,0 +1,3 @@
+# Documentation sequence — existing playbooks only
+- rockwell/logix-identity-check.yml
+- rockwell/logix-read-tags.yml

@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+_image_extract
+
+# Legacy hotfix copies at repo root — canonical sources live under app/
+/*.py
+/static/
+/templates/
+/profiles/
+app/static/videos/*.mp4
+**/*.mp4

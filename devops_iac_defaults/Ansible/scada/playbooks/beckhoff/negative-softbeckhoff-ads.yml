@@ -1,0 +1,41 @@
+---
+- name: Beckhoff SoftBeckhoff — ADS negative test (symbol reads must fail on this image)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: beckhoff_ads
+      host: "{{ plc_host }}"
+      ams_net_id: "{{ beckhoff_ams_net_id }}"
+      ads_port: "{{ beckhoff_ads_port | int }}"
+      symbols: "{{ beckhoff_symbols }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Attempt ADS symbol read on SoftBeckhoff (known incomplete in lab image)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: ads_read
+      changed_when: false
+      failed_when: false
+
+    - name: Parse ADS negative test result
+      ansible.builtin.set_fact:
+        ads_result: "{{ ads_read.stdout | from_json }}"
+
+    - name: Assert SoftBeckhoff ADS did not return usable symbol values
+      ansible.builtin.assert:
+        that:
+          - ads_result.result['values'] | selectattr('error', 'equalto', '') | list | length == 0
+        fail_msg: >-
+          SoftBeckhoff unexpectedly returned ADS symbol values — use beckhoff-ads persona
+          for pyads I/O. Result: {{ ads_result | default({}) }}
+
+    - name: Show expected ADS limitation
+      ansible.builtin.debug:
+        msg:
+          persona: beckhoff (SoftBeckhoff)
+          ads_outcome: expected failure — use beckhoff-ads persona for production-like pyads path
+          errors: "{{ ads_result.result['values'] | map(attribute='error') | list }}"

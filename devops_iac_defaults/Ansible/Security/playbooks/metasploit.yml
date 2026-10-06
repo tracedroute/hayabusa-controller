@@ -1,0 +1,106 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — Metasploit
+- name: "SECops — Metasploit (msfconsole)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: false
+    secops_target: ""
+    secops_msf_resource: ""
+    secops_msf_search: "smb"
+    secops_cli_args: ""
+    secops_timeout_sec: 300
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: msfconsole
+          target: "{{ secops_target | default('(unset)', true) }}"
+          execute: "{{ secops_execute }}"
+          note: "Lab only. Prefer a resource script path via -e secops_msf_resource=…"
+
+    - name: Locate msfconsole
+      ansible.builtin.command: bash -lc "command -v msfconsole || true"
+      register: which_tool
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "msfconsole={{ which_tool.stdout | trim | default('(not found)') }}"
+
+    - name: Require confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - (which_tool.stdout | trim | length) > 0
+        fail_msg: "Need msfconsole and -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Ensure results directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../results"
+        state: directory
+        mode: "0755"
+      when: secops_execute | bool
+
+    - name: Search modules (safe default)
+      ansible.builtin.shell: |
+        printf 'search {{ secops_msf_search }}\nexit\n' | msfconsole -q -x "search {{ secops_msf_search }}; exit"
+      register: tool_out
+      changed_when: false
+      when: >-
+        secops_execute | bool
+        and (secops_msf_resource | length) == 0
+        and (secops_cli_args | length) == 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Run resource script when provided
+      ansible.builtin.command:
+        argv: [msfconsole, -q, -r, "{{ secops_msf_resource }}"]
+      register: tool_out_r
+      changed_when: false
+      when: secops_execute | bool and (secops_msf_resource | length) > 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Run msfconsole (cli args / -x)
+      ansible.builtin.command:
+        argv: "{{ ['msfconsole'] + (secops_cli_args.split() | list) }}"
+      register: tool_out_cli
+      changed_when: false
+      when: secops_execute | bool and (secops_cli_args | length) > 0 and (secops_msf_resource | length) == 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Merge output
+      ansible.builtin.set_fact:
+        secops_stdout: >-
+          {{ (tool_out.stdout | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stdout | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stdout | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+        secops_stderr: >-
+          {{ (tool_out.stderr | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stderr | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stderr | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+      when: secops_execute | bool
+
+    - name: Show output
+      ansible.builtin.debug:
+        msg: "{{ secops_stdout.splitlines() if secops_stdout is defined else [] }}"
+      when: secops_execute | bool
+
+    - name: Persist results for controller / workspace
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../results/metasploit-{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}.txt"
+        content: |
+          # hayabusa-secops metasploit
+          search={{ secops_msf_search }}
+          --- stdout ---
+          {{ secops_stdout | default('') }}
+          --- stderr ---
+          {{ secops_stderr | default('') }}
+        mode: "0640"
+      when: secops_execute | bool and secops_stdout is defined

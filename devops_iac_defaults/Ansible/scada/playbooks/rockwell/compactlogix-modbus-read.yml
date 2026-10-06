@@ -1,0 +1,38 @@
+---
+- name: Rockwell CompactLogix — Modbus TCP register read (gateway / lab persona)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: "{{ modbus_holding_address | int }}"
+      count: "{{ modbus_holding_count | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read holding registers via Modbus TCP (industrial gateway pattern)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: modbus_read
+      changed_when: false
+
+    - name: Parse Modbus result
+      ansible.builtin.set_fact:
+        modbus_result: "{{ modbus_read.stdout | from_json }}"
+
+    - name: Assert register values returned
+      ansible.builtin.assert:
+        that:
+          - modbus_result.success | bool
+          - modbus_result.result['values'] | length == (modbus_holding_count | int)
+        fail_msg: "Modbus read failed or wrong count: {{ modbus_result | default({}) }}"
+
+    - name: Show register values
+      ansible.builtin.debug:
+        msg: "{{ modbus_result.result['values'] }}"

@@ -1,0 +1,46 @@
+{
+  "device_type": "switch",
+  "vendor": "cisco",
+  "config_template": "nx-os",
+  "configuration": {
+    "hostname": "nxos-switch-ztp",
+    "interfaces": [
+      {
+        "candidates": [
+          "Management0"
+        ],
+        "ip": "dhcp",
+        "description": "Management"
+      },
+      {
+        "name": "Ethernet1/1",
+        "description": "Access Port 1",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      },
+      {
+        "name": "Ethernet1/2",
+        "description": "Access Port 2",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      }
+    ],
+    "static_routes": [],
+    "default_gateway": "192.168.2.1",
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

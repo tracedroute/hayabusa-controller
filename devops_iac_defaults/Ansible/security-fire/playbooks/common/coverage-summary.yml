@@ -1,0 +1,21 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: Security & Fire Systems — coverage summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    security_domains:
+      - fire-alarm
+      - intrusion
+      - access-control
+      - video-vms
+      - mass-notification
+      - bms-life-safety
+  tasks:
+    - name: List packaged domains
+      ansible.builtin.debug:
+        msg:
+          workspace: "Security & Fire Systems"
+          domains: "{{ security_domains }}"
+          tip: "Open a vendor playbook under playbooks/<domain>/ and set SECURITY_PANEL_HOST."

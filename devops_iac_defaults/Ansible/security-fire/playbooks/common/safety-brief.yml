@@ -1,0 +1,15 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: Security & Fire Systems — safety brief
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Print operating rules
+      ansible.builtin.debug:
+        msg:
+          - "Read-only probes are the default for all Security & Fire Systems playbooks."
+          - "Do not silence, reset, unlock, or notify without owner/AHJ approval."
+          - "Prefer monitoring/BMS read paths over direct panel control."
+          - "Set SECURITY_PANEL_HOST to target a live appliance or gateway."
+          - "Set panel_apply_changes=true only inside an approved change window."

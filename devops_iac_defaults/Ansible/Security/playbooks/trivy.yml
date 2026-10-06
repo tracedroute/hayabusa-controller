@@ -1,0 +1,94 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — Trivy
+- name: "SECops — Trivy scan"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: false
+    secops_trivy_mode: "fs"
+    secops_target: "."
+    secops_cli_args: ""
+    secops_timeout_sec: 300
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: trivy
+          mode: "{{ secops_trivy_mode }}"
+          target: "{{ secops_target }}"
+          execute: "{{ secops_execute }}"
+
+    - name: Locate trivy
+      ansible.builtin.command: bash -lc "command -v trivy || true"
+      register: which_tool
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "trivy={{ which_tool.stdout | trim | default('(not found)') }}"
+
+    - name: Require confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - (which_tool.stdout | trim | length) > 0
+        fail_msg: "Need trivy and -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Ensure results directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../results"
+        state: directory
+        mode: "0755"
+      when: secops_execute | bool
+
+    - name: Run Trivy (structured)
+      ansible.builtin.command:
+        argv: [trivy, "{{ secops_trivy_mode }}", "{{ secops_target }}"]
+      register: tool_out
+      changed_when: false
+      when: secops_execute | bool and (secops_cli_args | length) == 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Run Trivy (cli args)
+      ansible.builtin.command:
+        argv: "{{ ['trivy'] + (secops_cli_args.split() | list) }}"
+      register: tool_out_cli
+      changed_when: false
+      when: secops_execute | bool and (secops_cli_args | length) > 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Merge output
+      ansible.builtin.set_fact:
+        secops_stdout: >-
+          {{ (tool_out.stdout | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stdout | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stdout | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+        secops_stderr: >-
+          {{ (tool_out.stderr | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stderr | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stderr | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+      when: secops_execute | bool
+
+    - name: Show findings
+      ansible.builtin.debug:
+        msg: "{{ secops_stdout.splitlines() if secops_stdout is defined else [] }}"
+      when: secops_execute | bool
+
+    - name: Persist results for controller / workspace
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../results/trivy-{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}.txt"
+        content: |
+          # hayabusa-secops trivy
+          mode={{ secops_trivy_mode }}
+          target={{ secops_target }}
+          --- stdout ---
+          {{ secops_stdout | default('') }}
+          --- stderr ---
+          {{ secops_stderr | default('') }}
+        mode: "0640"
+      when: secops_execute | bool and secops_stdout is defined

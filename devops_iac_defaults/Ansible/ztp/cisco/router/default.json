@@ -1,0 +1,42 @@
+{
+  "device_type": "router",
+  "vendor": "cisco",
+  "config_template": "ios-xe",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "cisco-router-ztp",
+    "interfaces": [
+      {
+        "name": "GigabitEthernet0/0/0",
+        "ip": "dhcp",
+        "description": "WAN - ZTP Primary"
+      },
+      {
+        "name": "GigabitEthernet0/0/1",
+        "ip": "192.168.1.1",
+        "netmask": "255.255.255.0",
+        "description": "LAN"
+      }
+    ],
+    "static_routes": [
+      {
+        "destination": "0.0.0.0",
+        "netmask": "0.0.0.0",
+        "next_hop": "192.168.1.254",
+        "description": "Default Route"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "port": 22,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": ["8.8.8.8", "1.1.1.1"]
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# Documentation sequence — run these existing playbooks in order (ansible-playbook each file).
+# Does not replace or modify the listed playbooks.
+- openplc-v4/runtime-health.yml
+- openplc-v4/runtime-api-diagnostics.yml
+- modbus/openplc-read-slave.yml
+- modbus/read-holding-registers.yml

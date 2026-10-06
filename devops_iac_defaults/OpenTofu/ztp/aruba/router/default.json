@@ -1,0 +1,27 @@
+{
+  "device_type": "router",
+  "vendor": "aruba",
+  "config_template": "aos-cx-gateway",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "aruba-gateway-ztp",
+    "interfaces": [
+      {
+        "name": "1/1/1",
+        "ip": "dhcp",
+        "description": "WAN"
+      },
+      {
+        "name": "1/1/2",
+        "ip": "192.168.1.1/24",
+        "description": "LAN"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true
+      }
+    }
+  }
+}

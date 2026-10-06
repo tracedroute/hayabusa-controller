@@ -1,0 +1,40 @@
+{
+  "device_type": "firewall",
+  "vendor": "paloalto",
+  "config_template": "panos",
+  "pnp_server": "pnpserver.local",
+  "dhcp_profile": "default-dhcp-profile",
+  "configuration": {
+    "system": {
+      "hostname": "paloalto-firewall-ztp",
+      "domain": "local"
+    },
+    "network": {
+      "interfaces": [
+        {
+          "name": "ethernet1/1",
+          "ip": "dhcp",
+          "zone": "untrust",
+          "description": "WAN"
+        },
+        {
+          "name": "ethernet1/2",
+          "ip": "192.168.1.1",
+          "netmask": "255.255.255.0",
+          "zone": "trust",
+          "description": "LAN"
+        }
+      ]
+    },
+    "security": {
+      "rules": [
+        {
+          "name": "allow-trust-to-untrust",
+          "from": "trust",
+          "to": "untrust",
+          "action": "allow"
+        }
+      ]
+    }
+  }
+}

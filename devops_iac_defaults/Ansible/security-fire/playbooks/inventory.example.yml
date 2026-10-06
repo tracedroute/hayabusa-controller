@@ -1,0 +1,8 @@
+---
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+  vars:
+    # Override per run, or export SECURITY_PANEL_HOST.
+    panel_host: ""

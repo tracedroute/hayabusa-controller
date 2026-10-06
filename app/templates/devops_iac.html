@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ansible &amp; OpenTofu · Hayabusa Controller Node</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Syncopate:wght@700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/controller.css" />
+  <link rel="stylesheet" href="/static/css/devops-iac.css" />
+</head>
+<body class="controller-devops">
+  <div class="controller-topbar">
+    <div class="controller-topbar-brand">
+      <div><strong>Hayabusa Controller Node</strong> · Ansible &amp; OpenTofu</div>
+      <p class="app-brand-gitops" id="gitopsNavHint"{% if not gitops_enabled %} hidden{% endif %}>{% if gitops_enabled %}Connected to {{ gitops_provider_label }}{% if gitops_nav_url %} · <a href="{{ gitops_nav_url }}" target="_blank" rel="noopener noreferrer">{{ gitops_nav_url }}</a>{% endif %}{% endif %}</p>
+    </div>
+    <div>
+      <a href="/">Dashboard</a>
+      <a href="/static/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener noreferrer">Open source notices</a>
+      <a href="/logout">Sign out</a>
+    </div>
+  </div>
+    <div id="devopsIacOverlay" class="devops-iac-overlay" onclick="if (event.target === this) closeDevopsIacWorkspaceModal();" role="dialog" aria-modal="true" aria-labelledby="devopsIacTitle">
+        <div class="devops-iac-panel" id="devopsIacPanel" onclick="event.stopPropagation();">
+            <div class="devops-iac-panel__head" id="devopsIacPanelHead">
+                <div class="devops-iac-panel__drag" id="devopsIacDragHandle" title="Drag to move (when PiP is on)">
+                    <h2 id="devopsIacTitle">Ansible &amp; OpenTofu workspace</h2>
+                </div>
+                <div class="devops-iac-head-tools">
+                    <button type="button" class="devops-iac-tool-btn" id="devopsIacBtnPip" aria-pressed="false" onclick="devopsIacTogglePipView();" title="Picture-in-picture: float over the page; click again for full dimmed window">PiP</button>
+                    <button type="button" class="devops-iac-tool-btn" id="devopsIacBtnMax" aria-pressed="false" onclick="devopsIacToggleMaxView();" title="Expand to almost full screen (hidden in PiP)">⛶</button>
+                    <button type="button" class="devops-iac-tool-btn" id="devopsIacBtnPipSmaller" onclick="devopsIacPipResize(0.88);" title="Smaller (PiP)" style="display:none;">−</button>
+                    <button type="button" class="devops-iac-tool-btn" id="devopsIacBtnPipLarger" onclick="devopsIacPipResize(1.12);" title="Larger (PiP)" style="display:none;">+</button>
+                    <span id="devopsIacWhoami" style="color:#6a7a80;font-size:11px;max-width:22vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title=""></span>
+                    <button type="button" class="devops-iac-tool-btn" style="border-color:rgba(127,214,181,0.45);color:#7fd4b5;" onclick="if (window.devopsIacOpenSshKeyModalForContext) window.devopsIacOpenSshKeyModalForContext();" title="Save encrypted personal or org-member PEM; used for ansible-playbook from this panel">SSH keys</button>
+                    <button type="button" class="devops-iac-tool-btn" onclick="window.open('/bare-metal-ztp','_blank');" title="Bare metal ZTP recipes (PXE / hypervisor / OS)">Bare metal ZTP</button>
+                    <button type="button" class="devops-iac-tool-btn" style="color:#c9a227;border-color:rgba(201,162,39,0.5);font-weight:600;" onclick="closeDevopsIacWorkspaceModal();">Close</button>
+                </div>
+            </div>
+            <div class="devops-iac-panel__body">
+                <p id="devopsIacStatus" style="color:#888;font-size:11px;margin:0 0 10px;min-height:14px;"></p>
+                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px;font-size:11px;color:#9aa0a6;">
+                    <label style="display:inline-flex;align-items:center;gap:6px;">Workspace
+                        <select id="devopsIacContext" onchange="devopsIacApplyContext();" style="padding:5px 8px;border-radius:6px;background:#1a1a1e;color:#ccc;border:1px solid #444;">
+                            <option value="user">Personal (only you)</option>
+                            <option value="org">Organization</option>
+                        </select>
+                    </label>
+                    <span id="devopsIacOrgWrap" style="display:none;align-items:center;gap:6px;">
+                        <label style="display:inline-flex;align-items:center;gap:6px;">Org
+                            <select id="devopsIacOrgSelect" onchange="devopsIacOnOrgChange();" style="padding:5px 8px;min-width:140px;border-radius:6px;background:#1a1a1e;color:#ccc;border:1px solid #444;"></select>
+                        </label>
+                    </span>
+                </div>
+                <p id="devopsIacReadonly" style="display:none;color:#c9a227;font-size:11px;margin:0 0 10px;"></p>
+                <div id="devopsIacCreationToolbar" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;font-size:11px;color:#9aa0a6;">
+                    <span id="devopsIacTofuState" style="color:#8faabe;flex:1;min-width:180px;">OpenTofu state: —</span>
+                    <button type="button" class="devops-iac-tool-btn" onclick="devopsIacRefreshTofuState();" title="Refresh state file summary">State</button>
+                    <button type="button" class="devops-iac-tool-btn" onclick="devopsIacLoadTofuInventory();" title="Preview host rows from terraform.tfstate">Inventory</button>
+                    <button type="button" class="devops-iac-tool-btn" onclick="window.devopsIacRefreshTree && window.devopsIacRefreshTree();" title="Reload folder listing from the server">↻ Tree</button>
+                    <button type="button" class="devops-iac-tool-btn" onclick="devopsIacSyncTofuInventory();" title="Write Ansible JSON inventory to ansible/inventory/opentofu_inventory_hosts.json">Sync inventory</button>
+                    <span style="color:#5c6570;font-size:9px;flex-basis:100%;margin-top:2px;">Creation = OpenTofu (infrastructure). Hard-refresh (Ctrl+Shift+R) if this panel misbehaves after an upgrade.</span>
+                </div>
+                <div id="devopsIacConfigToolbar" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;font-size:11px;color:#9aa0a6;">
+                    <span id="devopsIacSshStatus" style="flex:1;min-width:200px;color:#8faabe;">SSH keys: —</span>
+                    <button type="button" class="devops-iac-tool-btn" onclick="window.devopsIacRefreshTree && window.devopsIacRefreshTree();" title="Reload folder listing from the server">↻ Tree</button>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#ccc;">
+                        <input type="checkbox" id="devopsIacUseSshKey" checked="checked" />
+                        <span>Use key for ansible-playbook</span>
+                    </label>
+                    <button type="button" class="devops-iac-tool-btn" onclick="if (window.devopsIacOpenSshKeyModalForContext) window.devopsIacOpenSshKeyModalForContext();" title="Save PEM private key (encrypted on server)">Set SSH key…</button>
+                    <button type="button" class="devops-iac-tool-btn" onclick="if (window.devopsIacSshDeleteCurrentScope) window.devopsIacSshDeleteCurrentScope();" title="Remove key for this workspace context">Remove key</button>
+                    <span style="color:#5c6570;font-size:9px;flex-basis:100%;margin-top:2px;">Configuration = Ansible (configure what Creation provisioned). Related non-Ansible libraries (ZTP, device APIs, OpenPLC) are labeled separately.</span>
+                </div>
+                <div id="devopsIacSecurityToolbar" style="display:none;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px;font-size:11px;color:#9aa0a6;">
+                    <span style="flex:1;min-width:200px;color:#fca5a5;">SECops playbooks under Ansible/Security/ — vault secrets stay on this controller.</span>
+                    <button type="button" class="devops-iac-tool-btn" onclick="window.devopsIacRefreshTree && window.devopsIacRefreshTree();" title="Reload folder listing from the server">↻ Tree</button>
+                    <span style="color:#5c6570;font-size:9px;flex-basis:100%;margin-top:2px;">Security = Ansible wrappers for RustScan, Nuclei, NetExec, Metasploit, ZAP, packet capture, Prowler, Trivy, BloodHound.py. Prefight unless -e secops_execute=true.</span>
+                </div>
+                <div class="devops-iac-tabs" role="tablist" aria-label="Workspace views">
+                    <button type="button" class="devops-iac-tab-btn" id="devopsIacTabCreation" role="tab" aria-controls="devopsIacConsolePane" aria-selected="true" onclick="devopsIacShowWorkspaceTab('creation');" title="OpenTofu — provision infrastructure">Creation</button>
+                    <button type="button" class="devops-iac-tab-btn" id="devopsIacTabConfiguration" role="tab" aria-controls="devopsIacConsolePane" aria-selected="false" onclick="devopsIacShowWorkspaceTab('configuration');" title="Ansible playbooks and related config libraries">Configuration</button>
+                    <button type="button" class="devops-iac-tab-btn" id="devopsIacTabSecurity" role="tab" aria-controls="devopsIacConsolePane" aria-selected="false" onclick="devopsIacShowWorkspaceTab('security');" title="SECops Ansible playbooks under Ansible/Security">Security</button>
+                    <button type="button" class="devops-iac-tab-btn" id="devopsIacTabFiles" role="tab" aria-controls="devopsIacFilesPane" aria-selected="false" onclick="devopsIacShowWorkspaceTab('files');" title="Browse the same Creation, Configuration, or Security folders visually">Files</button>
+                </div>
+                <div id="devopsIacConsolePane" class="devops-iac-tab-pane is-active" role="tabpanel" aria-labelledby="devopsIacTabCreation">
+                    <p id="devopsIacModeHint" style="margin:0 0 8px;font-size:11px;color:#8faabe;">Creation — OpenTofu folders for provisioning. Mixed domains show only their OpenTofu side here.</p>
+                    <div class="devops-iac-workspace-grid" style="display:grid;grid-template-columns:minmax(160px,240px) 1fr;gap:14px;min-height:min(60vh,520px);flex:1;min-height:0;">
+                        <div id="devopsIacFileTree" style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;overflow:auto;font-size:12px;max-height:min(60vh,520px);min-height:120px;">Loading…</div>
+                        <div id="devopsIacTreeContextMenu" class="devops-iac-ctxmenu" role="menu" aria-label="File tree actions">
+                            <button type="button" id="devopsIacCtxRename" role="menuitem">Rename…</button>
+                            <button type="button" id="devopsIacCtxDelete" role="menuitem">Delete…</button>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:10px;min-width:0;">
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                                <input type="text" id="devopsIacCurrentPath" placeholder="path/to/main.tf" style="flex:1;min-width:200px;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;" />
+                                <button type="button" onclick="devopsIacNewFile();" style="padding:6px 12px;border-radius:6px;border:1px solid #555;background:#2a2a2e;color:#ccc;font-size:11px;cursor:pointer;">New file</button>
+                                <button type="button" onclick="devopsIacSave();" style="padding:6px 12px;border-radius:6px;border:1px solid #5d93a2;background:rgba(93,147,162,0.2);color:#5d93a2;font-size:11px;cursor:pointer;">Save</button>
+                            </div>
+                            <textarea id="devopsIacEditor" spellcheck="false" style="flex:1;min-height:min(32vh,280px);max-height:45vh;padding:10px;border-radius:6px;border:1px solid #444;background:#0a0b0d;color:#e8e8e8;font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.45;resize:vertical;" placeholder="Select a file or create one…"></textarea>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid rgba(255,255,255,0.1);padding-top:10px;">
+                                <label id="devopsIacRunLabel" style="color:#888;font-size:10px;">Run (tofu …)</label>
+                                <select id="devopsIacWorkdir" style="padding:5px 8px;border-radius:6px;font-size:11px;background:#1a1a1e;color:#ccc;border:1px solid #444;" title="Working directory for the command">
+                                    <option value="OpenTofu">OpenTofu (default)</option>
+                                    <option value=".">Workspace root</option>
+                                    <option value="OpenTofu/environments/dev">OpenTofu/environments/dev</option>
+                                    <option value="OpenTofu/environments/prod">OpenTofu/environments/prod</option>
+                                    <option value="OpenTofu/modules">OpenTofu/modules</option>
+                                    <option value="OpenTofu/modules/security-integrations">OpenTofu/modules/security-integrations</option>
+                                    <option value="Ansible/Security &amp; Fire Systems/opentofu">Ansible/Security &amp; Fire Systems/opentofu</option>
+                                    <option value="Ansible/Security/playbooks">Ansible/Security/playbooks</option>
+                                    <option value="Ansible/playbooks">Ansible/playbooks</option>
+                                    <option value="Ansible/IoT Devices">Ansible/IoT Devices</option>
+                                    <option value="Ansible/SCADA &amp; PLC">Ansible/SCADA &amp; PLC</option>
+                                    <option value="Ansible/ztp">Ansible/ztp</option>
+                                </select>
+                            </div>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:4px;">
+                                <label style="color:#7a9a9e;font-size:10px;">Saved</label>
+                                <select id="devopsIacSavedCmd" onchange="devopsIacOnSavedCommandPick(this);" style="min-width:160px;max-width:40vw;padding:5px 8px;border-radius:6px;font-size:11px;background:#1a1a1e;color:#ccc;border:1px solid #444;" title="Pick a saved command or type your own">
+                                    <option value="">— choose saved, or type below —</option>
+                                </select>
+                                <button type="button" onclick="devopsIacSaveCommandEntry();" style="padding:4px 10px;border-radius:6px;border:1px solid #555;background:#2a2a2e;color:#aaa;font-size:10px;cursor:pointer;" title="Save the command line above">Save</button>
+                                <button type="button" onclick="devopsIacDeleteSavedCommand();" style="padding:4px 10px;border-radius:6px;border:1px solid #555;background:#2a2a2e;color:#888;font-size:10px;cursor:pointer;" title="Remove selected saved command">Delete</button>
+                                <input type="text" id="devopsIacRunCmd" value="tofu version" style="flex:1;min-width:200px;padding:6px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;" title="Creation defaults to tofu; Configuration defaults to ansible-playbook" />
+                                <button type="button" onclick="devopsIacRun();" style="padding:6px 14px;border-radius:6px;border:1px solid #c9a227;background:rgba(201,162,39,0.18);color:#c9a227;font-size:11px;cursor:pointer;font-weight:600;">Run</button>
+                                <button type="button" onclick="devopsIacOpenScheduleDialog();" style="padding:6px 12px;border-radius:6px;border:1px solid #5d93a2;background:rgba(93,147,162,0.2);color:#7dd3fc;font-size:11px;cursor:pointer;font-weight:600;" title="Save this line as a repeating job">Schedule</button>
+                            </div>
+                            <pre id="devopsIacRunOutput" style="margin:0;max-height:22vh;overflow:auto;padding:10px;border-radius:6px;background:#050607;border:1px solid #2a2a30;color:#8faabe;font-size:11px;white-space:pre-wrap;word-break:break-word;"></pre>
+                            <div style="margin-top:10px;padding:8px;border:1px solid rgba(255,255,255,0.12);border-radius:8px;">
+                                <strong style="font-size:12px;color:#cbd5e1;">Org approval queue</strong>
+                                <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                                    <button type="button" class="devops-iac-tool-btn" onclick="devopsIacEnqueueCommand();">Queue for approval</button>
+                                    <button type="button" class="devops-iac-tool-btn" onclick="devopsIacRefreshQueue();">Refresh queue</button>
+                                </div>
+                                <div id="devopsIacQueueOut" style="margin-top:8px;font-size:11px;color:#94a3b8;max-height:120px;overflow:auto;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="devopsIacFilesPane" class="devops-iac-tab-pane" role="tabpanel" aria-labelledby="devopsIacTabFiles">
+                    <div class="devops-iac-structure-bar" role="group" aria-label="Folder structure">
+                        <strong>Folder structure</strong>
+                        <button type="button" class="devops-iac-structure-pill" id="devopsIacFilesModeCreation" aria-pressed="true" onclick="devopsIacSetStructureMode('creation');">Creation (OpenTofu)</button>
+                        <button type="button" class="devops-iac-structure-pill devops-iac-structure-pill--ansible" id="devopsIacFilesModeConfiguration" aria-pressed="false" onclick="devopsIacSetStructureMode('configuration');">Configuration</button>
+                        <button type="button" class="devops-iac-structure-pill devops-iac-structure-pill--security" id="devopsIacFilesModeSecurity" aria-pressed="false" onclick="devopsIacSetStructureMode('security');">Security</button>
+                        <span id="devopsIacFilesModeHint" style="flex:1;min-width:180px;color:#8faabe;">Same folders as Creation — OpenTofu provisioning under OpenTofu/.</span>
+                    </div>
+                    <div class="devops-iac-file-browser">
+                        <div class="devops-iac-file-browser__pathbar">
+                            <label for="devopsIacFileBrowserPath">Path:</label>
+                            <input id="devopsIacFileBrowserPath" type="text" value="/" readonly />
+                            <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserRefresh();" title="Reload files">Refresh</button>
+                            <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserUp();">Up</button>
+                            <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserNewFolder();">New folder</button>
+                            <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserNewFile();">New file</button>
+                            <button type="button" class="devops-iac-file-browser__btn devops-iac-file-browser__btn--danger" onclick="devopsIacFileBrowserDeleteSelected();">Delete</button>
+                        </div>
+                        <div class="devops-iac-file-browser__split">
+                            <div class="devops-iac-file-browser__side">
+                                <div id="devopsIacFileBrowserTree">Loading...</div>
+                            </div>
+                            <div class="devops-iac-file-browser__main">
+                                <div class="devops-iac-file-browser__columns" aria-hidden="true">
+                                    <span>Filename</span>
+                                    <span>Filesize</span>
+                                    <span>Filetype</span>
+                                    <span>Last modified</span>
+                                </div>
+                                <div id="devopsIacFileBrowserList" class="devops-iac-file-browser__list">Loading...</div>
+                            </div>
+                        </div>
+                        <div class="devops-iac-file-browser__editor">
+                            <div class="devops-iac-file-browser__editor-head">
+                                <label for="devopsIacFileBrowserSelectedPath">Selected file:</label>
+                                <input type="text" id="devopsIacFileBrowserSelectedPath" class="devops-iac-file-browser__selected-input" placeholder="Select a text file..." style="flex:1;min-width:220px;" />
+                                <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserRenameSelected();">Rename</button>
+                                <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserOpenInConsole();" title="Open in Creation, Configuration, or Security based on path">Open in editor</button>
+                                <button type="button" class="devops-iac-file-browser__btn" onclick="devopsIacFileBrowserSave();">Save file</button>
+                            </div>
+                            <textarea id="devopsIacFileBrowserEditor" spellcheck="false" placeholder="Text file preview/editor. Binary or oversized files are blocked by the server."></textarea>
+                        </div>
+                        <div class="devops-iac-file-browser__transfer">
+                            <div class="devops-iac-file-browser__transfer-head">Server/Local file</div>
+                            <div id="devopsIacFileBrowserTransferBody" class="devops-iac-file-browser__transfer-body">No file transfers queued. File actions are applied directly to the selected user or organization workspace.</div>
+                            <div class="devops-iac-file-browser__transfer-tabs">
+                                <span>Queued files</span>
+                                <span>Failed transfers</span>
+                                <span>Successful transfers</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="devopsIacSshModal" class="devops-iac-schedule-modal" style="display:none;position:fixed;inset:0;z-index:12001;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);padding:20px;box-sizing:border-box;" role="dialog" aria-modal="true" aria-labelledby="devopsIacSshTitle" onclick="if (event.target === this &amp;&amp; window.devopsIacCloseSshKeyModal) window.devopsIacCloseSshKeyModal();">
+        <div style="max-width:560px;width:100%;background:#1a1d22;border:1px solid #3a3f48;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.5);padding:20px;max-height:90vh;overflow:auto;" onclick="event.stopPropagation();">
+            <h2 id="devopsIacSshTitle" style="margin:0 0 8px;font-size:16px;color:#e8e8e8;">SSH private key (PEM)</h2>
+            <p id="devopsIacSshScopeLabel" style="margin:0 0 12px;font-size:12px;color:#94a3b8;line-height:1.45;">Keys are encrypted on disk (Fernet). Hayabusa injects them only for <code>ansible-playbook</code> runs from this panel.</p>
+            <textarea id="devopsIacSshPem" spellcheck="false" style="width:100%;min-height:140px;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #444;background:#0d0d10;color:#e8e8e8;font-family:Consolas,Monaco,monospace;font-size:11px;line-height:1.35;" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;…&#10;-----END OPENSSH PRIVATE KEY-----"></textarea>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;justify-content:flex-end;">
+                <button type="button" class="devops-iac-tool-btn" onclick="if (window.devopsIacCloseSshKeyModal) window.devopsIacCloseSshKeyModal();">Cancel</button>
+                <button type="button" style="padding:8px 16px;border-radius:8px;border:1px solid #c9a227;background:rgba(201,162,39,0.22);color:#c9a227;font-size:12px;cursor:pointer;font-weight:600;" onclick="if (window.devopsIacSshSavePem) window.devopsIacSshSavePem();">Save encrypted</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="devopsIacScheduleModal" class="devops-iac-schedule-modal" style="display:none;position:fixed;inset:0;z-index:12000;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);padding:20px;box-sizing:border-box;" role="dialog" aria-modal="true" aria-labelledby="devopsIacSchedTitle" onclick="if (event.target === this) devopsIacCloseScheduleDialog();">
+        <div style="max-width:520px;width:100%;background:#1a1d22;border:1px solid #3a3f48;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.5);padding:20px;max-height:90vh;overflow:auto;" onclick="event.stopPropagation();">
+            <h2 id="devopsIacSchedTitle" style="margin:0 0 8px;font-size:16px;color:#e8e8e8;">Schedule Ansible / OpenTofu (or allowlisted tool)</h2>
+            <p id="devopsIacSchedWarn" style="margin:0 0 12px;padding:10px 12px;border-radius:8px;background:rgba(201,162,39,0.12);border:1px solid rgba(201,162,39,0.4);color:#c9a227;font-size:12px;line-height:1.45;">
+                <strong>Warning.</strong> This will register a job to run the command below on a repeating schedule (every interval you pick) in your selected workspace, until you cancel it under <strong>Integrations → Automation jobs</strong>. Treat targets and credentials as production-impacting.
+            </p>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <label style="font-size:11px;color:#9aa0a6;">Job name
+                    <input type="text" id="devopsIacSchedName" placeholder="e.g. Nightly tofu plan" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;box-sizing:border-box;" />
+                </label>
+                <label style="font-size:11px;color:#9aa0a6;">Command (same as Run line; first word must be allowlisted)
+                    <input type="text" id="devopsIacSchedCommandPreview" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;box-sizing:border-box;" />
+                </label>
+                <label style="font-size:11px;color:#9aa0a6;">Workdir
+                    <input type="text" id="devopsIacSchedWorkdir" value="." style="width:100%;margin-top:4px;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;box-sizing:border-box;" />
+                </label>
+                <label style="font-size:11px;color:#9aa0a6;">Repeat every
+                    <select id="devopsIacSchedInterval" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#0d0d10;color:#eee;font-size:12px;">
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60" selected>1 hour</option>
+                        <option value="360">6 hours</option>
+                        <option value="720">12 hours</option>
+                        <option value="1440">24 hours</option>
+                    </select>
+                </label>
+                <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#ccc;cursor:pointer;">
+                    <input type="checkbox" id="devopsIacSchedAck" style="margin-top:3px;" />
+                    <span>I understand this will run on a schedule until I cancel the job in Integrations.</span>
+                </label>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:16px;">
+                <button type="button" class="devops-iac-tool-btn" onclick="devopsIacCloseScheduleDialog();" style="color:#999;">Close</button>
+                <button type="button" class="devops-iac-tool-btn" style="color:#7dd3fc;border-color:#5d93a2;font-weight:600;" onclick="devopsIacSubmitSchedule();">Create scheduled job</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+window.peregrinePageOrgScope = { context: '', org_id: '' };
+window.peregrineAppendOrgScopeQuery = function (qs) { return qs || ''; };
+window.peregrineUrlWithOrgScope = function (pathOrUrl) { return pathOrUrl; };
+function _devopsIacEscKey(ev) {
+    if (ev.key === "Escape") {
+        document.removeEventListener("keydown", _devopsIacEscKey);
+        closeDevopsIacWorkspaceModal();
+    }
+}
+
+var DEVOPS_IAC_LAYOUT_KEY = "devopsIac_panel_layout_v1";
+function devopsIacGetLayoutState() {
+    if (!window._devopsIacLayout) {
+        window._devopsIacLayout = { mode: "modal", pip: null };
+    }
+    return window._devopsIacLayout;
+}
+function devopsIacLayoutLoadFromStorage() {
+    var st = { mode: "modal", pip: null };
+    try {
+        var raw = sessionStorage.getItem(DEVOPS_IAC_LAYOUT_KEY);
+        if (raw) {
+            var o = JSON.parse(raw);
+            if (o.mode === "max" || o.mode === "modal" || o.mode === "pip") st.mode = o.mode;
+            if (o.pip && typeof o.pip === "object" && typeof o.pip.width === "number" && o.pip.width > 0) {
+                st.pip = o.pip;
+            }
+        }
+    } catch (e) {}
+    window._devopsIacLayout = st;
+}
+function devopsIacLayoutSaveToStorage() {
+    var st = devopsIacGetLayoutState();
+    var panel = document.getElementById("devopsIacPanel");
+    if (st.mode === "pip" && panel) {
+        var r = panel.getBoundingClientRect();
+        st.pip = { left: r.left, top: r.top, width: r.width, height: r.height };
+    }
+    try {
+        sessionStorage.setItem(DEVOPS_IAC_LAYOUT_KEY, JSON.stringify({ mode: st.mode, pip: st.pip }));
+    } catch (e) {}
+}
+function devopsIacClearPipInline(panel) {
+    if (!panel) return;
+    ["left", "right", "top", "bottom", "width", "height"].forEach(function (k) {
+        panel.style.removeProperty(k);
+    });
+}
+function devopsIacUpdateLayoutToolbar() {
+    var st = devopsIacGetLayoutState();
+    var btnPip = document.getElementById("devopsIacBtnPip");
+    var btnMax = document.getElementById("devopsIacBtnMax");
+    var btnS = document.getElementById("devopsIacBtnPipSmaller");
+    var btnL = document.getElementById("devopsIacBtnPipLarger");
+    if (btnPip) {
+        btnPip.setAttribute("aria-pressed", st.mode === "pip" ? "true" : "false");
+        btnPip.textContent = st.mode === "pip" ? "Dock" : "PiP";
+        btnPip.title = st.mode === "pip" ? "Return to the dimmed, centered window" : "Float over the page; drag the title, resize from the corner, use − / +";
+    }
+    if (btnMax) {
+        btnMax.style.display = st.mode === "pip" ? "none" : "";
+        btnMax.setAttribute("aria-pressed", st.mode === "max" ? "true" : "false");
+        btnMax.title = st.mode === "max" ? "Restore size" : "Expand to almost full screen";
+    }
+    if (btnS) btnS.style.display = st.mode === "pip" ? "" : "none";
+    if (btnL) btnL.style.display = st.mode === "pip" ? "" : "none";
+}
+function devopsIacApplyViewMode() {
+    var overlay = document.getElementById("devopsIacOverlay");
+    var panel = document.getElementById("devopsIacPanel");
+    if (!overlay || !panel) return;
+    var st = devopsIacGetLayoutState();
+    overlay.classList.remove("devops-iac-overlay--pip");
+    panel.classList.remove("devops-iac-panel--max", "devops-iac-panel--pip");
+    devopsIacClearPipInline(panel);
+    if (st.mode === "pip") {
+        overlay.classList.add("devops-iac-overlay--pip");
+        panel.classList.add("devops-iac-panel--pip");
+        if (st.pip && st.pip.width > 0) {
+            panel.style.left = st.pip.left + "px";
+            panel.style.top = st.pip.top + "px";
+            panel.style.width = st.pip.width + "px";
+            panel.style.height = st.pip.height + "px";
+            panel.style.setProperty("right", "auto");
+            panel.style.setProperty("bottom", "auto");
+        }
+        overlay.setAttribute("aria-modal", "false");
+    } else {
+        overlay.setAttribute("aria-modal", "true");
+        if (st.mode === "max") {
+            panel.classList.add("devops-iac-panel--max");
+        }
+    }
+    devopsIacUpdateLayoutToolbar();
+}
+function devopsIacSnapshotPipRect() {
+    var st = devopsIacGetLayoutState();
+    var panel = document.getElementById("devopsIacPanel");
+    if (st.mode !== "pip" || !panel) return;
+    var r = panel.getBoundingClientRect();
+    st.pip = { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+function devopsIacTogglePipView() {
+    var st = devopsIacGetLayoutState();
+    if (st.mode === "pip") {
+        devopsIacSnapshotPipRect();
+        st.mode = "modal";
+    } else {
+        if (st.mode === "max") st.mode = "modal";
+        st.mode = "pip";
+    }
+    devopsIacApplyViewMode();
+}
+function devopsIacToggleMaxView() {
+    var st = devopsIacGetLayoutState();
+    if (st.mode === "pip") return;
+    st.mode = st.mode === "max" ? "modal" : "max";
+    devopsIacApplyViewMode();
+}
+function devopsIacPipResize(factor) {
+    var st = devopsIacGetLayoutState();
+    if (st.mode !== "pip") return;
+    var panel = document.getElementById("devopsIacPanel");
+    if (!panel) return;
+    var r = panel.getBoundingClientRect();
+    if (!panel.style.width) {
+        panel.style.width = r.width + "px";
+        panel.style.height = r.height + "px";
+        panel.style.left = r.left + "px";
+        panel.style.top = r.top + "px";
+        panel.style.setProperty("right", "auto");
+        panel.style.setProperty("bottom", "auto");
+    }
+    var w = Math.round(Math.max(300, Math.min(window.innerWidth * 0.96, r.width * factor)));
+    var h = Math.round(Math.max(200, Math.min(window.innerHeight * 0.9, r.height * factor)));
+    var left = r.left, top = r.top;
+    if (left + w > window.innerWidth - 6) left = Math.max(6, window.innerWidth - 6 - w);
+    if (top + h > window.innerHeight - 6) top = Math.max(6, window.innerHeight - 6 - h);
+    panel.style.width = w + "px";
+    panel.style.height = h + "px";
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    st.pip = { left: left, top: top, width: w, height: h };
+}
+var _devopsIacLayoutInited;
+function devopsIacInitLayoutOnce() {
+    if (_devopsIacLayoutInited) return;
+    _devopsIacLayoutInited = 1;
+    var h = document.getElementById("devopsIacDragHandle");
+    if (h) {
+        h.addEventListener("pointerdown", function (ev) {
+            if (devopsIacGetLayoutState().mode !== "pip") return;
+            if (ev.button !== 0) return;
+            var panel = document.getElementById("devopsIacPanel");
+            if (!panel) return;
+            ev.preventDefault();
+            h.classList.add("devops-iac-panel__drag--active");
+            var r = panel.getBoundingClientRect();
+            if (!panel.style.width) {
+                panel.style.width = r.width + "px";
+                panel.style.height = r.height + "px";
+                panel.style.left = r.left + "px";
+                panel.style.top = r.top + "px";
+                panel.style.setProperty("right", "auto");
+                panel.style.setProperty("bottom", "auto");
+            }
+            var startX = ev.clientX, startY = ev.clientY;
+            var origL = parseFloat(panel.style.left) || r.left, origT = parseFloat(panel.style.top) || r.top;
+            function move(ev2) {
+                var dx = ev2.clientX - startX, dy = ev2.clientY - startY;
+                var nl = origL + dx, nt = origT + dy;
+                var pw = panel.offsetWidth, ph = panel.offsetHeight;
+                var pad = 6;
+                nl = Math.min(Math.max(pad, nl), window.innerWidth - pw - pad);
+                nt = Math.min(Math.max(pad, nt), window.innerHeight - ph - pad);
+                panel.style.left = nl + "px";
+                panel.style.top = nt + "px";
+            }
+            function up() {
+                h.classList.remove("devops-iac-panel__drag--active");
+                document.removeEventListener("pointermove", move);
+                document.removeEventListener("pointerup", up);
+                var st2 = devopsIacGetLayoutState();
+                if (st2.mode === "pip") {
+                    var r2 = panel.getBoundingClientRect();
+                    st2.pip = { left: r2.left, top: r2.top, width: r2.width, height: r2.height };
+                }
+            }
+            document.addEventListener("pointermove", move);
+            document.addEventListener("pointerup", up);
+        });
+    }
+}
+
+function openDevopsIacWorkspaceModal() {
+    devopsIacLayoutLoadFromStorage();
+    const overlay = document.getElementById("devopsIacOverlay");
+    if (overlay) {
+        overlay.style.display = "flex";
+    }
+    devopsIacInitLayoutOnce();
+    devopsIacApplyViewMode();
+    document.addEventListener("keydown", _devopsIacEscKey);
+    if (typeof closeNav === "function") {
+        closeNav();
+    }
+    if (window.initDevopsIacWorkspace) {
+        setTimeout(function () { window.initDevopsIacWorkspace(); }, 40);
+    }
+}
+
+function closeDevopsIacWorkspaceModal() {
+    devopsIacLayoutSaveToStorage();
+    document.removeEventListener("keydown", _devopsIacEscKey);
+    const overlay = document.getElementById("devopsIacOverlay");
+    if (overlay) {
+        overlay.style.display = "none";
+    }
+    if (typeof openNav === "function") {
+        openNav();
+    }
+}
+
+</script>
+<script src="/static/js/controller-session-keepalive.js?v=20260808a"></script>
+<script src="/static/js/controller-liability-ack.js?v=20260914a"></script>
+<script src="/static/js/peregrine-devops-iac.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  // Keep Close button as navigate home on controller
+  window.closeDevopsIacWorkspaceModal = function () { window.location.href = '/'; };
+  openDevopsIacWorkspaceModal();
+});
+</script>
+  {% include "_legal_footer.html" %}
+  {% include "_ecosystem_blade.html" %}
+</body>
+</html>

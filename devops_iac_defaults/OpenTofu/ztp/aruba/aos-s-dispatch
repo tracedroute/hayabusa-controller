@@ -1,0 +1,21 @@
+cli
+configure
+hostname Aruba-AOS-S-Switch
+!
+ip authorized-managers 0.0.0.0 255.255.255.255 access manager
+!
+snmp-server community public
+!
+interface 1
+ shutdown
+!
+interface Management
+ ip address 192.168.2.92 255.255.255.0 255.255.255.0
+!
+username admin
+password admin123
+access operator
+!
+spanning-tree priority 0
+!
+end

@@ -1,0 +1,48 @@
+---
+# Example inventory for Security & Fire Systems endpoints.
+# Copy to your workspace ansible inventory or pass -i to ansible-playbook.
+all:
+  children:
+    security_endpoints:
+      hosts:
+        fire-panel-1:
+          ansible_connection: local
+          ansible_host: 192.168.10.10
+          security_role: fire_panel
+          endpoint_port: 443
+          endpoint_path: /status
+        pacs-1:
+          ansible_connection: local
+          ansible_host: 192.168.10.20
+          security_role: access_control
+          endpoint_port: 443
+          endpoint_path: /api/status
+        vms-1:
+          ansible_connection: local
+          ansible_host: 192.168.10.30
+          security_role: camera_vms
+          endpoint_port: 443
+          endpoint_path: /api/status
+        door-1:
+          ansible_connection: local
+          ansible_host: 192.168.10.40
+          security_role: door_controller
+          endpoint_port: 443
+          endpoint_path: /api/v1/doors
+        camera-1:
+          ansible_connection: local
+          ansible_host: 192.168.10.50
+          security_role: camera
+          endpoint_port: 443
+          endpoint_path: /ISAPI/System/deviceInfo
+    fire_alarm:
+      hosts:
+        fire-panel-1:
+    access_control:
+      hosts:
+        pacs-1:
+        door-1:
+    video_vms:
+      hosts:
+        vms-1:
+        camera-1:

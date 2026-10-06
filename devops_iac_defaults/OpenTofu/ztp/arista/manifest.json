@@ -1,0 +1,46 @@
+{
+  "workspace": "my-tofu-project",
+  "path": "ztp/arista",
+  "description": "Arista ZTP Dispatch Scripts - Editable provisioning scripts for Arista EOS device families",
+  "dispatch_scripts": [
+    {
+      "filename": "7xxx-fixed-dispatch",
+      "title": "Arista 7xxx Fixed Configuration",
+      "description": "Arista 7050/7280 series fixed-config switches ZTP provisioning script",
+      "device_families": ["Arista 7050", "Arista 7280"],
+      "protocol": "EOS CLI",
+      "editable": true,
+      "tags": ["7xxx", "fixed-config", "switch"]
+    },
+    {
+      "filename": "7500-7800-dispatch",
+      "title": "Arista 7500/7800 Modular Chassis",
+      "description": "Arista 7500/7800 modular chassis switches with supervisor modules",
+      "device_families": ["Arista 7500", "Arista 7800"],
+      "protocol": "EOS CLI",
+      "editable": true,
+      "tags": ["7500", "7800", "modular", "supervisor"]
+    },
+    {
+      "filename": "710p-7200s-dispatch",
+      "title": "Arista 710P / 7200S Series",
+      "description": "Arista 710P and 7200S series access switches ZTP provisioning",
+      "device_families": ["Arista 710P", "Arista 7200S"],
+      "protocol": "EOS CLI",
+      "editable": true,
+      "tags": ["710p", "7200s", "access-switch"]
+    },
+    {
+      "filename": "veos-dispatch",
+      "title": "Arista vEOS (Virtual)",
+      "description": "Arista vEOS virtual switch instances for cloud/lab deployments",
+      "device_families": ["Arista vEOS"],
+      "protocol": "EOS CLI",
+      "editable": true,
+      "tags": ["veos", "virtual", "cloud", "lab"]
+    }
+  ],
+  "version": "1.0",
+  "last_updated": "2026-05-09T03:55:00Z",
+  "notes": "All dispatch scripts are executable and can be edited through the Peregrine console. Each script corresponds to a specific Arista device family and is routed by dnsmasq based on DHCP model information."
+}

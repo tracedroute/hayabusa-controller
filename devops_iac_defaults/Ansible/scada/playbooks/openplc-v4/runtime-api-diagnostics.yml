@@ -1,0 +1,90 @@
+---
+- name: OpenPLC v4 — authenticated runtime diagnostics (logs, users, compile state)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openplc_v4_base_url: "https://{{ plc_host }}:{{ openplc_v4_port | default(8443) }}"
+  tasks:
+    - name: Establish authenticated session
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/openplc_v4_api.py lab-session
+          --base-url {{ openplc_v4_base_url }}
+          --username {{ openplc_v4_user }}
+          --password {{ openplc_v4_pass }}
+          --timeout {{ plc_timeout | int }}
+      register: openplc_session
+      changed_when: false
+
+    - name: Parse session JSON
+      ansible.builtin.set_fact:
+        openplc_session_result: "{{ openplc_session.stdout | from_json }}"
+
+    - name: Login for bearer token requests
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/openplc_v4_api.py login
+          --base-url {{ openplc_v4_base_url }}
+          --username {{ openplc_v4_user }}
+          --password {{ openplc_v4_pass }}
+          --timeout {{ plc_timeout | int }}
+      register: openplc_login
+      changed_when: false
+
+    - name: Extract JWT access token
+      ansible.builtin.set_fact:
+        openplc_token: "{{ (openplc_login.stdout | from_json).result.access_token }}"
+
+    - name: Fetch runtime logs (authenticated)
+      ansible.builtin.uri:
+        url: "{{ openplc_v4_base_url }}/api/runtime-logs"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ openplc_token }}"
+        validate_certs: false
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: openplc_logs
+      changed_when: false
+
+    - name: Fetch user directory (authenticated)
+      ansible.builtin.uri:
+        url: "{{ openplc_v4_base_url }}/api/get-users-info"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ openplc_token }}"
+        validate_certs: false
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: openplc_users
+      changed_when: false
+
+    - name: Fetch compilation status (authenticated)
+      ansible.builtin.uri:
+        url: "{{ openplc_v4_base_url }}/api/compilation-status"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ openplc_token }}"
+        validate_certs: false
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: openplc_compile
+      changed_when: false
+
+    - name: Assert authenticated diagnostics surface
+      ansible.builtin.assert:
+        that:
+          - openplc_session_result.success | bool
+          - openplc_logs.json['runtime-logs'] | length > 0
+          - openplc_users.json | length > 0
+          - openplc_compile.json.status is defined
+        fail_msg: "OpenPLC v4 diagnostics check failed"
+
+    - name: Show runtime diagnostics summary
+      ansible.builtin.debug:
+        msg:
+          runtime_status: "{{ openplc_session_result.result.runtime.body.status }}"
+          log_entries: "{{ openplc_logs.json['runtime-logs'] | length }}"
+          users: "{{ openplc_users.json | map(attribute='username') | list }}"
+          compile_status: "{{ openplc_compile.json.status }}"

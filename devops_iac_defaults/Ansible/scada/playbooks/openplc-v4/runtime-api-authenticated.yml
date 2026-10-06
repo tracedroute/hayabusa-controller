@@ -1,0 +1,48 @@
+---
+- name: OpenPLC v4 — JWT bootstrap, login, and authenticated runtime status
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openplc_v4_base_url: "https://{{ plc_host }}:{{ openplc_v4_port | default(8443) }}"
+  tasks:
+    - name: Bootstrap lab API user (idempotent)
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/openplc_v4_api.py bootstrap
+          --base-url {{ openplc_v4_base_url }}
+          --username {{ openplc_v4_user }}
+          --password {{ openplc_v4_pass }}
+          --timeout {{ plc_timeout | int }}
+      register: openplc_bootstrap
+      changed_when: false
+      failed_when: false
+
+    - name: Establish authenticated lab session
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/openplc_v4_api.py lab-session
+          --base-url {{ openplc_v4_base_url }}
+          --username {{ openplc_v4_user }}
+          --password {{ openplc_v4_pass }}
+          --timeout {{ plc_timeout | int }}
+      register: openplc_session
+      changed_when: false
+
+    - name: Parse authenticated session result
+      ansible.builtin.set_fact:
+        openplc_session_result: "{{ openplc_session.stdout | from_json }}"
+
+    - name: Assert JWT login and runtime status succeeded
+      ansible.builtin.assert:
+        that:
+          - openplc_session_result.success | bool
+          - openplc_session_result.result.runtime.status == 200
+          - openplc_session_result.result.runtime.body.status is defined
+        fail_msg: "OpenPLC v4 authenticated API check failed: {{ openplc_session_result | default({}) }}"
+
+    - name: Show authenticated runtime status
+      ansible.builtin.debug:
+        msg:
+          login_status: "{{ openplc_session_result.result.login.status }}"
+          runtime_status: "{{ openplc_session_result.result.runtime.body.status }}"

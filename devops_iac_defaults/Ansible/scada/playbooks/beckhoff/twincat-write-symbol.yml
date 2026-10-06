@@ -1,0 +1,36 @@
+---
+- name: Beckhoff TwinCAT — write ADS symbol
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    beckhoff_write_symbol: "MAIN.bStart"
+    beckhoff_write_value: true
+    beckhoff_write_type: "bool"
+    plc_payload:
+      protocol: beckhoff_ads
+      host: "{{ plc_host }}"
+      ams_net_id: "{{ beckhoff_ams_net_id }}"
+      ads_port: "{{ beckhoff_ads_port | int }}"
+      symbol: "{{ beckhoff_write_symbol }}"
+      value: "{{ beckhoff_write_value }}"
+      ads_type: "{{ beckhoff_write_type }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_beckhoff_write=true and enable plc_writes_enabled in Hayabusa operator policy.
+      when: not (allow_beckhoff_write | default(false) | bool)
+
+    - name: Write symbol via pyads
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: ads_write
+      changed_when: true
+
+    - name: Show write result
+      ansible.builtin.debug:
+        msg: "{{ ads_write.stdout | from_json }}"

@@ -1,0 +1,30 @@
+---
+- name: OpenPLC v4 — HTTPS runtime API health (JWT-protected, like production)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openplc_v4_api_url: "https://{{ plc_host }}:{{ openplc_v4_port | default(8443) }}/api/v1"
+  tasks:
+    - name: Probe OpenPLC v4 API root (expect 401 without JWT — same as production)
+      ansible.builtin.uri:
+        url: "{{ openplc_v4_api_url }}"
+        method: GET
+        validate_certs: false
+        status_code: 401
+        timeout: "{{ plc_timeout | int }}"
+      register: openplc_v4_api
+      changed_when: false
+
+    - name: Assert JWT gate is active
+      ansible.builtin.assert:
+        that:
+          - openplc_v4_api.json.msg is search('Authorization|JWT|Unauthorized|Missing')
+        fail_msg: "OpenPLC v4 API did not reject unauthenticated access as expected: {{ openplc_v4_api | default({}) }}"
+
+    - name: Show API response
+      ansible.builtin.debug:
+        msg:
+          url: "{{ openplc_v4_api_url }}"
+          status: "{{ openplc_v4_api.status }}"
+          body: "{{ openplc_v4_api.json }}"

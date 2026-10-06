@@ -1,0 +1,27 @@
+---
+- name: OpenPLC — read default Modbus slave (holding registers @0)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: "{{ modbus_holding_address | int }}"
+      count: "{{ modbus_holding_count | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read OpenPLC Modbus holding registers
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: openplc_read
+      changed_when: false
+
+    - name: Show OpenPLC values
+      ansible.builtin.debug:
+        msg: "{{ openplc_read.stdout | from_json }}"

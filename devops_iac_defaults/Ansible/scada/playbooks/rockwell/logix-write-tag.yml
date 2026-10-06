@@ -1,0 +1,33 @@
+---
+- name: Rockwell / Allen-Bradley — write Logix tag (CIP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ab_write_tag: "Program:MainProgram.MotorRun"
+    ab_write_value: true
+    plc_payload:
+      protocol: allen_bradley_cip
+      host: "{{ plc_host }}"
+      path: "{{ ab_path }}"
+      tag: "{{ ab_write_tag }}"
+      value: "{{ ab_write_value }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_ab_write=true and enable plc_writes_enabled in Hayabusa operator policy.
+      when: not (allow_ab_write | default(false) | bool)
+
+    - name: Write tag via pycomm3
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: ab_write
+      changed_when: true
+
+    - name: Show write result
+      ansible.builtin.debug:
+        msg: "{{ ab_write.stdout | from_json }}"

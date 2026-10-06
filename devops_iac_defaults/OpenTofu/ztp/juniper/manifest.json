@@ -1,0 +1,160 @@
+{
+  "vendor": "Juniper",
+  "version": "1.0.0",
+  "description": "Juniper Local ZTP Provisioning Scripts",
+  "device_families": [
+    {
+      "id": "ex-series",
+      "name": "EX Series (Access/Aggregation)",
+      "models": [
+        "EX2200",
+        "EX2300",
+        "EX3200",
+        "EX3300",
+        "EX4200",
+        "EX4300",
+        "EX4500",
+        "EX4550",
+        "EX9200",
+        "EX9250"
+      ],
+      "dispatch_script": "ex-series-dispatch",
+      "default_credentials": {
+        "username": "root",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "netconf_enabled": true,
+      "management_interface": "ge-0/0/0",
+      "default_ip": "192.168.2.110/24"
+    },
+    {
+      "id": "qfx-series",
+      "name": "QFX Series (Data Center)",
+      "models": [
+        "QFX3100",
+        "QFX3500",
+        "QFX5100",
+        "QFX5110",
+        "QFX5200",
+        "QFX10000",
+        "QFX10002",
+        "QFX10008",
+        "QFX10016"
+      ],
+      "dispatch_script": "qfx-series-dispatch",
+      "default_credentials": {
+        "username": "root",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "netconf_enabled": true,
+      "management_interface": "xe-0/0/0",
+      "default_ip": "192.168.2.111/24"
+    },
+    {
+      "id": "mx-series",
+      "name": "MX Series (Routers)",
+      "models": [
+        "MX5",
+        "MX10",
+        "MX40",
+        "MX80",
+        "MX104",
+        "MX204",
+        "MX240",
+        "MX480",
+        "MX960"
+      ],
+      "dispatch_script": "mx-series-dispatch",
+      "default_credentials": {
+        "username": "root",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "netconf_enabled": true,
+      "management_interface": "ge-0/0/0",
+      "default_ip": "192.168.2.112/24"
+    },
+    {
+      "id": "srx-series",
+      "name": "SRX Series (Security)",
+      "models": [
+        "SRX100",
+        "SRX110",
+        "SRX210",
+        "SRX220",
+        "SRX240",
+        "SRX300",
+        "SRX320",
+        "SRX340",
+        "SRX345",
+        "SRX550",
+        "SRX650",
+        "SRX1000",
+        "SRX1500",
+        "SRX3400",
+        "SRX3600",
+        "SRX5400",
+        "SRX5600"
+      ],
+      "dispatch_script": "srx-series-dispatch",
+      "default_credentials": {
+        "username": "root",
+        "password": "admin123"
+      },
+      "ssh_enabled": true,
+      "netconf_enabled": true,
+      "web_management_enabled": true,
+      "management_interface": "ge-0/0/0",
+      "default_ip": "192.168.2.113/24"
+    }
+  ],
+  "dhcp_boot_options": {
+    "protocol": "TFTP",
+    "boot_trigger": "DHCP Option 43 (sub-option 1)",
+    "server": "192.168.2.1",
+    "tftp_root": "juniper"
+  },
+  "editable": true,
+  "last_updated": "2026-10-06T03:48:53Z",
+  "dispatch_scripts": [
+    {
+      "filename": "ex-series-dispatch",
+      "title": "Ex Series Dispatch",
+      "description": "Existing juniper ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "ex"
+      ]
+    },
+    {
+      "filename": "mx-series-dispatch",
+      "title": "Mx Series Dispatch",
+      "description": "Existing juniper ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "mx"
+      ]
+    },
+    {
+      "filename": "qfx-series-dispatch",
+      "title": "Qfx Series Dispatch",
+      "description": "Existing juniper ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "qfx"
+      ]
+    },
+    {
+      "filename": "srx-series-dispatch",
+      "title": "Srx Series Dispatch",
+      "description": "Existing juniper ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "srx"
+      ]
+    }
+  ],
+  "notes": "Dispatch scripts are working assets \u2014 manifest wiring only; CI verifies filenames exist on disk."
+}

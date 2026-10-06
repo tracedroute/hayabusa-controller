@@ -1,0 +1,103 @@
+{
+  "device_type": "switch",
+  "vendor": "juniper",
+  "config_template": "junos-switch",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "juniper-qfx-ztp",
+    "vlans": [
+      {
+        "name": "default",
+        "vlan_id": 1,
+        "description": "Default VLAN"
+      },
+      {
+        "name": "data",
+        "vlan_id": 10,
+        "description": "Data VLAN"
+      },
+      {
+        "name": "voice",
+        "vlan_id": 20,
+        "description": "Voice VLAN"
+      }
+    ],
+    "interfaces": [
+      {
+        "name": "ge-0/0/0",
+        "unit": 0,
+        "family": "ethernet-switching",
+        "port_mode": "access",
+        "vlan": "data",
+        "description": "Data Port 1"
+      },
+      {
+        "name": "ge-0/0/1",
+        "unit": 0,
+        "family": "ethernet-switching",
+        "port_mode": "access",
+        "vlan": "voice",
+        "description": "Voice Port 1"
+      },
+      {
+        "name": "ge-0/0/23",
+        "unit": 0,
+        "family": "ethernet-switching",
+        "port_mode": "trunk",
+        "vlan_members": [
+          "default",
+          "data",
+          "voice"
+        ],
+        "description": "Uplink Trunk"
+      }
+    ],
+    "vlan_interfaces": [
+      {
+        "name": "vlan10",
+        "unit": 0,
+        "family": "inet",
+        "address": "192.168.10.1/24",
+        "description": "Data VLAN Interface"
+      },
+      {
+        "name": "vlan20",
+        "unit": 0,
+        "family": "inet",
+        "address": "192.168.20.1/24",
+        "description": "Voice VLAN Interface"
+      }
+    ],
+    "protocols": {
+      "stp": {
+        "enabled": true,
+        "mode": "rstp"
+      },
+      "lldp": {
+        "enabled": true
+      }
+    },
+    "system_services": {
+      "ssh": {
+        "enabled": true,
+        "port": 22
+      },
+      "telnet": {
+        "enabled": false
+      },
+      "web_management": {
+        "enabled": true,
+        "http": {
+          "enabled": true,
+          "port": 80
+        },
+        "https": {
+          "enabled": true,
+          "port": 443
+        }
+      }
+    }
+  },
+  "model": "QFX"
+}

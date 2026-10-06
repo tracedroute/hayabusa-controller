@@ -1,0 +1,8 @@
+all:
+  children:
+    iot:
+      hosts:
+        # example-device:
+        #   ansible_host: 192.168.1.50
+      vars:
+        iot_dry_run: true

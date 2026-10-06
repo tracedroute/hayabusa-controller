@@ -1,0 +1,25 @@
+---
+- name: OPC UA — read node (SCADA/HMI servers)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: opcua
+      host: "{{ plc_host }}"
+      port: "{{ opcua_port | int }}"
+      node_id: "{{ opcua_node_id }}"
+      security: "{{ opcua_security | default('auto') }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read OPC UA node via asyncua (plc_cli handles opc-plc signed lab endpoints)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: opcua_read
+      changed_when: false
+
+    - name: Show OPC UA value
+      ansible.builtin.debug:
+        msg: "{{ opcua_read.stdout | from_json }}"

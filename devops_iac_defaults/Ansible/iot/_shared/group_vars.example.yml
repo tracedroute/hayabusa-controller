@@ -1,0 +1,3 @@
+# Copy values into Ansible/group_vars or per-vendor vars. Never commit secrets.
+iot_api_timeout_seconds: 15
+iot_verify_tls: true

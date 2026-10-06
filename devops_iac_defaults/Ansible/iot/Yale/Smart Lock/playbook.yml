@@ -1,0 +1,87 @@
+---
+# PEREGRINE_GENERATED_IOT_PLAYBOOK_V2
+- name: Manage Yale Smart Lock IoT device
+  hosts: localhost
+  gather_facts: false
+  vars:
+    iot_make: "Yale"
+    iot_model: "Smart Lock"
+    iot_device_id: "yale_smart_lock"
+    iot_integration_hint: "Yale/August Connect bridge or Home Assistant Yale Access integration"
+    iot_device_host: "{{ lookup('env', 'IOT_DEVICE_HOST') | default('', true) }}"
+    iot_probe_scheme: "{{ lookup('env', 'IOT_PROBE_SCHEME') | default('http', true) }}"
+    iot_probe_paths:
+      - /
+      - /status
+    home_assistant_url: "{{ lookup('env', 'HOME_ASSISTANT_URL') | default('', true) }}"
+    home_assistant_token: "{{ lookup('env', 'HOME_ASSISTANT_TOKEN') | default('', true) }}"
+    home_assistant_entity_id: "{{ lookup('env', 'HOME_ASSISTANT_ENTITY_ID') | default('', true) }}"
+    iot_api_base_url: "{{ lookup('env', 'IOT_API_BASE_URL') | default('', true) }}"
+    iot_api_token: "{{ lookup('env', 'IOT_API_TOKEN') | default('', true) }}"
+    iot_api_headers: "{{ {'Authorization': 'Bearer ' ~ iot_api_token} if (iot_api_token | length > 0) else {} }}"
+    iot_api_method: "{{ lookup('env', 'IOT_API_METHOD') | default('POST', true) }}"
+    iot_command_payload: {}
+    iot_apply_changes: false
+  tasks:
+    - name: Show supported integration paths
+      ansible.builtin.debug:
+        msg:
+          make: "{{ iot_make }}"
+          model: "{{ iot_model }}"
+          support_path: "{{ iot_integration_hint }}"
+          safety: "Read-only by default; set iot_apply_changes=true and provide an explicit payload before changing a device."
+
+    - name: Probe direct local HTTP endpoint when a host is provided
+      ansible.builtin.uri:
+        url: "{{ iot_probe_scheme }}://{{ iot_device_host }}{{ item }}"
+        method: GET
+        return_content: false
+        status_code: [200, 204, 301, 302, 401, 403, 404]
+        timeout: 5
+      loop: "{{ iot_probe_paths }}"
+      register: iot_probe_results
+      failed_when: false
+      changed_when: false
+      when: iot_device_host | length > 0
+
+    - name: Read Home Assistant entity state when configured
+      ansible.builtin.uri:
+        url: "{{ home_assistant_url }}/api/states/{{ home_assistant_entity_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ home_assistant_token }}"
+          Content-Type: "application/json"
+        return_content: true
+        status_code: [200]
+        timeout: 10
+      register: home_assistant_state
+      changed_when: false
+      no_log: true
+      when:
+        - home_assistant_url | length > 0
+        - home_assistant_token | length > 0
+        - home_assistant_entity_id | length > 0
+
+    - name: Require explicit apply flag before command payloads
+      ansible.builtin.assert:
+        that:
+          - iot_apply_changes | bool
+        fail_msg: "Refusing to send iot_command_payload unless iot_apply_changes=true."
+        success_msg: "Apply mode enabled for explicit {{ iot_make }} {{ iot_model }} command payload."
+      when: iot_command_payload | length > 0
+
+    - name: Send optional vendor or bridge API command
+      ansible.builtin.uri:
+        url: "{{ iot_api_base_url }}"
+        method: "{{ iot_api_method }}"
+        headers: "{{ iot_api_headers }}"
+        body_format: json
+        body: "{{ iot_command_payload }}"
+        return_content: true
+        timeout: 15
+      register: iot_command_result
+      when:
+        - iot_apply_changes | bool
+        - iot_api_base_url | length > 0
+        - iot_command_payload | length > 0
+      no_log: "{{ iot_api_token | length > 0 }}"

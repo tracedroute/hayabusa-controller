@@ -1,0 +1,25 @@
+---
+- name: Mitsubishi — read word units (MC Protocol Type3E)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: mitsubishi_mc
+      host: "{{ plc_host }}"
+      port: "{{ mitsubishi_port | int }}"
+      device: "{{ mitsubishi_device }}"
+      count: "{{ mitsubishi_count | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Batch-read D/M devices via pymcprotocol
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: mc_read
+      changed_when: false
+
+    - name: Show word values
+      ansible.builtin.debug:
+        msg: "{{ mc_read.stdout | from_json }}"

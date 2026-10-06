@@ -1,0 +1,29 @@
+---
+- name: Rockwell / Allen-Bradley — Logix CIP identity (no tag I/O)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Read controller identity via pycomm3 (ListIdentity / session)
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/logix_identity.py
+          {{ ab_path | default(plc_host ~ '/0') }}
+          --timeout {{ plc_timeout | float }}
+      register: ab_identity
+      changed_when: false
+
+    - name: Parse identity JSON
+      ansible.builtin.set_fact:
+        ab_identity_result: "{{ ab_identity.stdout | from_json }}"
+
+    - name: Assert CIP identity matches expected Logix catalog (lab cpppo L73)
+      ansible.builtin.assert:
+        that:
+          - ab_identity_result.success | bool
+          - ab_identity_result.result.product_name is search('1756-L73|LOGIX5573|CompactLogix|ControlLogix')
+        fail_msg: "Unexpected or missing Logix identity: {{ ab_identity_result | default({}) }}"
+
+    - name: Show controller identity
+      ansible.builtin.debug:
+        msg: "{{ ab_identity_result.result }}"

@@ -1,0 +1,67 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — tcpdump + Zeek
+- name: "SECops — Packet capture (tcpdump / Zeek)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: "{{ secops_execute | default(false) }}"
+    secops_iface: "{{ secops_iface | default('any', true) }}"
+    secops_bpf: "{{ secops_bpf | default('', true) }}"
+    secops_capture_sec: "{{ secops_capture_sec | default(10) | int }}"
+    secops_pcap_path: "{{ secops_pcap_path | default('/tmp/hayabusa-secops-capture.pcap', true) }}"
+    secops_run_zeek: "{{ secops_run_zeek | default(false) }}"
+    secops_zeek_bin: "{{ secops_zeek_bin | default('/opt/zeek/bin/zeek', true) }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: tcpdump
+          iface: "{{ secops_iface }}"
+          bpf: "{{ secops_bpf | default('(none)', true) }}"
+          execute: "{{ secops_execute }}"
+          note: "Captures run on the controller host NIC — site LAN vantage."
+
+    - name: Locate tcpdump
+      ansible.builtin.command: bash -lc "command -v tcpdump || true"
+      register: which_tcpdump
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "tcpdump={{ which_tcpdump.stdout | trim | default('(not found)') }}"
+
+    - name: Require confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - (which_tcpdump.stdout | trim | length) > 0
+        fail_msg: "Need tcpdump and -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Capture packets
+      ansible.builtin.shell: |
+        set -e
+        timeout "{{ secops_capture_sec }}" tcpdump -i "{{ secops_iface }}" -w "{{ secops_pcap_path }}" {{ secops_bpf }} || true
+        ls -la "{{ secops_pcap_path }}" || true
+      args:
+        executable: /bin/bash
+      register: tool_out
+      changed_when: false
+      when: secops_execute | bool
+
+    - name: Optional Zeek summary
+      ansible.builtin.command:
+        argv: ["{{ secops_zeek_bin }}", "-r", "{{ secops_pcap_path }}"]
+      register: zeek_out
+      changed_when: false
+      failed_when: false
+      when: secops_execute | bool and (secops_run_zeek | bool)
+
+    - name: Show capture result
+      ansible.builtin.debug:
+        msg:
+          tcpdump: "{{ tool_out.stdout_lines | default([]) }}"
+          zeek: "{{ zeek_out.stdout_lines | default([]) }}"
+      when: secops_execute | bool

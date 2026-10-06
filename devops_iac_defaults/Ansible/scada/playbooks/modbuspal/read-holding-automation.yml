@@ -1,0 +1,66 @@
+---
+- name: ModbusPal — read static and automation-driven holding registers
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    modbuspal_static_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: 0
+      count: 3
+      timeout: "{{ plc_timeout | float }}"
+    modbuspal_auto_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: 102
+      count: 1
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read static holding registers (100, 200, 300)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MODBUS_STATIC
+      environment:
+        MODBUS_STATIC: "{{ modbuspal_static_payload | to_json }}"
+      register: modbuspal_static
+      changed_when: false
+
+    - name: Read automation register (linear ramp on address 102)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MODBUS_AUTO
+      environment:
+        MODBUS_AUTO: "{{ modbuspal_auto_payload | to_json }}"
+      register: modbuspal_auto
+      changed_when: false
+
+    - name: Parse ModbusPal reads
+      ansible.builtin.set_fact:
+        modbuspal_static_result: "{{ modbuspal_static.stdout | from_json }}"
+        modbuspal_auto_result: "{{ modbuspal_auto.stdout | from_json }}"
+
+    - name: Assert static register map matches ModbusPal project
+      ansible.builtin.assert:
+        that:
+          - modbuspal_static_result.success | bool
+          - modbuspal_static_result.result['values'] == [100, 200, 300]
+        fail_msg: "ModbusPal static registers unexpected: {{ modbuspal_static_result | default({}) }}"
+
+    - name: Assert automation register is live (0-1000 ramp)
+      ansible.builtin.assert:
+        that:
+          - modbuspal_auto_result.success | bool
+          - (modbuspal_auto_result.result['values'][0] | int) >= 0
+          - (modbuspal_auto_result.result['values'][0] | int) <= 1000
+        fail_msg: "ModbusPal automation register out of range: {{ modbuspal_auto_result | default({}) }}"
+
+    - name: Show ModbusPal values
+      ansible.builtin.debug:
+        msg:
+          static: "{{ modbuspal_static_result.result['values'] }}"
+          automation_register_102: "{{ modbuspal_auto_result.result['values'][0] }}"

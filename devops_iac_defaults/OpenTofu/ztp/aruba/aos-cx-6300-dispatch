@@ -1,0 +1,15 @@
+configure terminal
+hostname Aruba-AOS-CX-6300
+!
+interface Management 1/1/1
+ no shutdown
+ ip static 192.168.2.90 255.255.255.0
+!
+username admin group administrators plaintext-password admin123
+!
+ssh server vrf mgmt
+!
+spanning-tree mode rapid-pvst
+!
+end
+write memory

@@ -1,0 +1,7 @@
+---
+- hosts: all
+  gather_facts: false
+  tasks:
+    - name: Scaffold check
+      ansible.builtin.debug:
+        msg: "Peregrine Ansible scaffold is ready"

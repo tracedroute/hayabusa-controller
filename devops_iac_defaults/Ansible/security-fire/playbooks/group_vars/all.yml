@@ -1,0 +1,4 @@
+---
+# Defaults for Security & Fire Systems lab runs.
+security_panel_verify_tls: false
+security_panel_apply_changes: false

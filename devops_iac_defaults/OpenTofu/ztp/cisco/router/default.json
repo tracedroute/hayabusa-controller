@@ -1,0 +1,39 @@
+{
+  "device_type": "router",
+  "vendor": "cisco",
+  "config_template": "ios-xe",
+  "configuration": {
+    "hostname": "cisco-router-ztp",
+    "interfaces": [
+      {
+        "candidates": [
+          "GigabitEthernet0/0/0",
+          "GigabitEthernet0",
+          "GigabitEthernet1"
+        ],
+        "ip": "dhcp",
+        "description": "WAN - ZTP"
+      }
+    ],
+    "static_routes": [
+      {
+        "destination": "0.0.0.0",
+        "netmask": "0.0.0.0",
+        "next_hop": "dhcp"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

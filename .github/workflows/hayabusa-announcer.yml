@@ -1,0 +1,326 @@
+name: Hayabusa Release Announcer
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: 'Send Discord notifications even if nothing changed (for testing)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hayabusa-announcer
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Windows app: Microsoft Store
+  # ---------------------------------------------------------------------------
+  windows_store:
+    name: Windows Store (Hayabusa)
+    runs-on: ubuntu-latest
+    env:
+      PRODUCT_ID: 9PBHT1GHJ0LS
+      CATALOG_URL: https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds=9PBHT1GHJ0LS&market=US&languages=en-US
+
+    steps:
+      - name: Restore last known version
+        uses: actions/cache/restore@v4
+        with:
+          path: last_version.txt
+          key: hayabusa-announcer-version-${{ github.run_id }}
+          restore-keys: |
+            hayabusa-announcer-version-
+
+      - name: Fetch live version from Microsoft Store
+        id: store
+        run: |
+          set -euo pipefail
+
+          curl -fsSL --retry 3 --retry-delay 5 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+            "$CATALOG_URL" -o catalog.json
+
+          TITLE=$(jq -r '.Products[0].LocalizedProperties[0].ProductTitle // "Hayabusa"' catalog.json)
+
+          # Pull the version out of each package's PackageFullName (e.g. Name_1.2.3.0_x64__abc123),
+          # then take the highest one in case x64/arm64 packages differ.
+          LIVE_VERSION=$(jq -r '
+              .Products[0].DisplaySkuAvailabilities[]?.Sku.Properties.Packages[]?
+              | (.PackageFullName // "")
+              | capture("_(?<v>[0-9]+(\\.[0-9]+){2,3})_")
+              | .v' catalog.json | sort -V | tail -n 1)
+
+          if [ -z "$LIVE_VERSION" ]; then
+            echo "::error::Could not find a version in the catalog response. Fields present on each package:"
+            jq '[.Products[0].DisplaySkuAvailabilities[]?.Sku.Properties.Packages[]? | keys]' catalog.json || true
+            exit 1
+          fi
+
+          echo "Live Store version: $LIVE_VERSION"
+          {
+            echo "version=$LIVE_VERSION"
+            echo "title=$TITLE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compare with last known version
+        id: compare
+        env:
+          LIVE_VERSION: ${{ steps.store.outputs.version }}
+          FORCE_NOTIFY: ${{ inputs.force_notify }}
+        run: |
+          LAST=""
+          [ -f last_version.txt ] && LAST=$(cat last_version.txt)
+
+          echo "Last known: '${LAST}'"
+          echo "Live:       '${LIVE_VERSION}'"
+
+          SAVE=false
+          NOTIFY=false
+
+          if [ -z "$LAST" ]; then
+            echo "No baseline found. Recording current version without notifying."
+            SAVE=true
+          elif [ "$LIVE_VERSION" != "$LAST" ]; then
+            echo "Update detected!"
+            SAVE=true
+            NOTIFY=true
+          else
+            echo "No change."
+          fi
+
+          if [ "$FORCE_NOTIFY" = "true" ]; then
+            NOTIFY=true
+          fi
+
+          {
+            echo "save=$SAVE"
+            echo "notify=$NOTIFY"
+            echo "previous=${LAST:-none}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Notify BEFORE saving, so a failed webhook call is retried on the next run.
+      - name: Send announcement to Discord
+        if: steps.compare.outputs.notify == 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TITLE: ${{ steps.store.outputs.title }}
+          VERSION: ${{ steps.store.outputs.version }}
+          PREVIOUS: ${{ steps.compare.outputs.previous }}
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg title "$TITLE" \
+            --arg version "$VERSION" \
+            --arg previous "$PREVIOUS" \
+            --arg url "https://apps.microsoft.com/detail/${PRODUCT_ID,,}" \
+            '{
+              username: "Hayabusa Tracker",
+              embeds: [{
+                title: "🚀 \($title) update is live!",
+                url: $url,
+                description: "A new version of **\($title)** is now available on the Microsoft Store.",
+                color: 42223,
+                fields: [
+                  { name: "New version", value: "`\($version)`", inline: true },
+                  { name: "Previous version", value: "`\($previous)`", inline: true }
+                ]
+              }]
+            }' \
+          | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"
+
+      - name: Record version
+        if: steps.compare.outputs.save == 'true'
+        env:
+          LIVE_VERSION: ${{ steps.store.outputs.version }}
+        run: echo "$LIVE_VERSION" > last_version.txt
+
+      # Only write a new cache entry when something actually changed.
+      - name: Save version cache
+        if: steps.compare.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: last_version.txt
+          key: hayabusa-announcer-version-${{ github.run_id }}
+
+  # ---------------------------------------------------------------------------
+  # Docker Hub: one job per repo (runs in parallel, failures are independent)
+  # ---------------------------------------------------------------------------
+  docker_hub:
+    name: Docker Hub (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Hayabusa Controller
+            repo: tracedroute/hayabusa-controller
+            slug: hayabusa-controller
+            # Leave empty to announce any tag push; set to e.g. 'latest' to watch one tag.
+            tracked_tag: ''
+          - label: Hayabusa Core
+            repo: tracedroute/peregrinev2
+            slug: peregrinev2
+            tracked_tag: ''
+    env:
+      DOCKER_REPO: ${{ matrix.repo }}
+      TRACKED_TAG: ${{ matrix.tracked_tag }}
+      LABEL: ${{ matrix.label }}
+
+    steps:
+      - name: Restore last known image
+        uses: actions/cache/restore@v4
+        with:
+          path: last_image.txt
+          key: ${{ matrix.slug }}-image-${{ github.run_id }}
+          restore-keys: |
+            ${{ matrix.slug }}-image-
+
+      - name: Fetch newest image from Docker Hub
+        id: hub
+        env:
+          # Only needed if a repo is private (add both as repo secrets).
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          AUTH=()
+          if [ -n "${DH_USER:-}" ] && [ -n "${DH_TOKEN:-}" ]; then
+            ACCESS_TOKEN=$(jq -n --arg u "$DH_USER" --arg s "$DH_TOKEN" '{identifier:$u,secret:$s}' \
+              | curl -fsS -H "Content-Type: application/json" -d @- \
+                  https://hub.docker.com/v2/auth/token | jq -r '.access_token // empty') || ACCESS_TOKEN=""
+            if [ -z "$ACCESS_TOKEN" ]; then
+              echo "::error::Docker Hub login failed. Check the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets."
+              exit 1
+            fi
+            AUTH=(-H "Authorization: Bearer $ACCESS_TOKEN")
+          fi
+
+          curl -fsSL --retry 3 --retry-delay 5 "${AUTH[@]}" \
+            "https://hub.docker.com/v2/repositories/${DOCKER_REPO}/tags?page_size=100" \
+            -o tags.json
+
+          # Newest tag by push time (optionally limited to TRACKED_TAG).
+          jq -c --arg t "$TRACKED_TAG" '
+              [.results[]? | select($t == "" or .name == $t)]
+              | sort_by(.tag_last_pushed // .last_updated)
+              | reverse
+              | .[0] // empty' tags.json > newest.json
+
+          if [ ! -s newest.json ]; then
+            echo "::error::No matching tags found for ${DOCKER_REPO}. Check the repo name, tracked_tag, or whether the repo is private."
+            exit 1
+          fi
+
+          TAG=$(jq -r '.name' newest.json)
+          DIGEST=$(jq -r '.digest // .images[0].digest // "unknown"' newest.json)
+          PUSHED=$(jq -r '(.tag_last_pushed // .last_updated) | sub("\\.[0-9]+Z$"; "Z")' newest.json)
+          PLATFORMS=$(jq -r '[.images[]? | select(.os != "unknown") | "\(.os)/\(.architecture)"] | unique | join(", ")' newest.json)
+          EPOCH=$(date -u -d "$PUSHED" +%s)
+
+          echo "Newest image: ${TAG}@${DIGEST} (pushed ${PUSHED})"
+          {
+            echo "tag=$TAG"
+            echo "digest=$DIGEST"
+            echo "epoch=$EPOCH"
+            echo "platforms=${PLATFORMS:-n/a}"
+            echo "fingerprint=${TAG}@${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Compare with last known image
+        id: compare
+        env:
+          LIVE: ${{ steps.hub.outputs.fingerprint }}
+          FORCE_NOTIFY: ${{ inputs.force_notify }}
+        run: |
+          LAST=""
+          [ -f last_image.txt ] && LAST=$(cat last_image.txt)
+
+          echo "Last known: '${LAST}'"
+          echo "Live:       '${LIVE}'"
+
+          SAVE=false
+          NOTIFY=false
+
+          if [ -z "$LAST" ]; then
+            echo "No baseline found. Recording current image without notifying."
+            SAVE=true
+          elif [ "$LIVE" != "$LAST" ]; then
+            echo "New image detected!"
+            SAVE=true
+            NOTIFY=true
+          else
+            echo "No change."
+          fi
+
+          if [ "$FORCE_NOTIFY" = "true" ]; then
+            NOTIFY=true
+          fi
+
+          PREVIOUS_TAG="${LAST%%@*}"
+          {
+            echo "save=$SAVE"
+            echo "notify=$NOTIFY"
+            echo "previous=${PREVIOUS_TAG:-none}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Notify BEFORE saving, so a failed webhook call is retried next run.
+      - name: Send announcement to Discord
+        if: steps.compare.outputs.notify == 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ steps.hub.outputs.tag }}
+          DIGEST: ${{ steps.hub.outputs.digest }}
+          EPOCH: ${{ steps.hub.outputs.epoch }}
+          PLATFORMS: ${{ steps.hub.outputs.platforms }}
+          PREVIOUS: ${{ steps.compare.outputs.previous }}
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg label "$LABEL" \
+            --arg repo "$DOCKER_REPO" \
+            --arg tag "$TAG" \
+            --arg digest "${DIGEST:0:19}" \
+            --arg epoch "$EPOCH" \
+            --arg platforms "$PLATFORMS" \
+            --arg previous "$PREVIOUS" \
+            --arg url "https://hub.docker.com/r/${DOCKER_REPO}/tags" \
+            '{
+              username: "Hayabusa Tracker",
+              embeds: [{
+                title: "🐳 New \($label) image pushed",
+                url: $url,
+                description: "A new image was pushed to **\($repo)**.\n\n```\ndocker pull \($repo):\($tag)\n```",
+                color: 2397933,
+                fields: [
+                  { name: "Tag", value: "`\($tag)`", inline: true },
+                  { name: "Previous tag", value: "`\($previous)`", inline: true },
+                  { name: "Platforms", value: $platforms, inline: true },
+                  { name: "Pushed", value: "<t:\($epoch):f> (<t:\($epoch):R>)", inline: false },
+                  { name: "Digest", value: "`\($digest)…`", inline: false }
+                ]
+              }]
+            }' \
+          | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK_URL"
+
+      - name: Record image
+        if: steps.compare.outputs.save == 'true'
+        env:
+          LIVE: ${{ steps.hub.outputs.fingerprint }}
+        run: echo "$LIVE" > last_image.txt
+
+      # Only write a new cache entry when something actually changed.
+      - name: Save image cache
+        if: steps.compare.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: last_image.txt
+          key: ${{ matrix.slug }}-image-${{ github.run_id }}

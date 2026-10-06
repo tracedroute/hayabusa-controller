@@ -1,0 +1,45 @@
+---
+- name: Beckhoff TwinCAT — read symbols via SoftBeckhoff REST API
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    beckhoff_symbol_list: "{{ beckhoff_symbols.split(',') | map('trim') | list }}"
+  tasks:
+    - name: List published TwinCAT symbols
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ beckhoff_rest_port | default(8080) }}/symbols"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: symbol_catalog
+      changed_when: false
+
+    - name: Read each symbol value (base64-encoded bytes in SoftBeckhoff)
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ beckhoff_rest_port | default(8080) }}/symbols/{{ item }}"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      loop: "{{ beckhoff_symbol_list }}"
+      register: symbol_reads
+      changed_when: false
+
+    - name: Assert every configured symbol exists and returned data
+      ansible.builtin.assert:
+        that:
+          - item.status == 200
+          - item.json is defined or (item.content is defined and item.content | length > 0)
+        fail_msg: "Symbol {{ item.item }} missing or empty on SoftBeckhoff REST API"
+      loop: "{{ symbol_reads.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Show symbol values (raw SoftBeckhoff encoding)
+      ansible.builtin.debug:
+        msg:
+          symbol: "{{ item.item }}"
+          raw: "{{ item.json | default(item.content | default('')) }}"
+      loop: "{{ symbol_reads.results }}"
+      loop_control:
+        label: "{{ item.item }}"

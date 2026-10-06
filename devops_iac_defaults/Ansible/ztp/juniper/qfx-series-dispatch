@@ -1,0 +1,16 @@
+configure
+set system hostname Juniper-QFX-Series
+set system root-authentication plain-text-password
+set system root-authentication encrypted-password "$1$ZeJlM56K$OaOnIeOMnrBQxJ3jZC0O20"
+set system services ssh
+set system services netconf ssh port 830
+set system virtual-chassis preprovisioned
+!
+set interfaces xe-0/0/0 description Management
+set interfaces xe-0/0/0 unit 0 family inet address 192.168.2.111/24
+!
+set protocols spanning-tree bridge-priority 8k
+!
+set routing-options static route 0.0.0.0/0 next-hop 192.168.2.1
+!
+commit

@@ -1,0 +1,122 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: "Alertus Alertus Server — health / reachability"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    security_category: "Mass Notification"
+    security_vendor: "Alertus"
+    security_product: "Alertus Server"
+    security_protocol_hint: "Alertus web/API endpoints"
+    security_notes: "Emergency notification platform health scaffold."
+    panel_host: "{{ lookup('env', 'SECURITY_PANEL_HOST') | default(lookup('env', 'PANEL_HOST') | default('', true), true) }}"
+    panel_scheme: "{{ lookup('env', 'SECURITY_PANEL_SCHEME') | default('https', true) }}"
+    panel_port_list: [80, 443]
+    panel_probe_paths:
+      - /
+      - /status
+      - /api
+      - /api/status
+      - /health
+    panel_verify_tls: "{{ lookup('env', 'SECURITY_PANEL_VERIFY_TLS') | default('false', true) | bool }}"
+    panel_api_token: "{{ lookup('env', 'SECURITY_PANEL_TOKEN') | default('', true) }}"
+    panel_api_headers: "{{ {'Authorization': 'Bearer ' ~ panel_api_token} if (panel_api_token | length > 0) else {} }}"
+    panel_apply_changes: false
+    panel_command_payload: {}
+    panel_command_method: "{{ lookup('env', 'SECURITY_PANEL_COMMAND_METHOD') | default('POST', true) }}"
+    panel_command_path: "{{ lookup('env', 'SECURITY_PANEL_COMMAND_PATH') | default('', true) }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          category: "{{ security_category }}"
+          vendor: "{{ security_vendor }}"
+          product: "{{ security_product }}"
+          protocol_hint: "{{ security_protocol_hint }}"
+          notes: "{{ security_notes }}"
+          default_ports: "80, 443"
+          mode: "read-only unless panel_apply_changes=true"
+
+    - name: Hint when no host configured
+      ansible.builtin.debug:
+        msg: "Set SECURITY_PANEL_HOST (or PANEL_HOST) to probe a live endpoint."
+      when: panel_host | length == 0
+
+    - name: TCP reachability on common service ports
+      ansible.builtin.wait_for:
+        host: "{{ panel_host }}"
+        port: "{{ item }}"
+        timeout: 3
+      loop: "{{ panel_port_list }}"
+      register: panel_tcp
+      failed_when: false
+      changed_when: false
+      when: panel_host | length > 0
+
+    - name: Summarize responsive TCP ports
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            panel_tcp.results
+            | selectattr('failed', 'defined')
+            | rejectattr('failed')
+            | map(attribute='item')
+            | list
+          }}
+      when: panel_host | length > 0
+
+    - name: HTTP(S) probe of management / API paths
+      ansible.builtin.uri:
+        url: "{{ panel_scheme }}://{{ panel_host }}:{{ item.0 }}{{ item.1 }}"
+        method: GET
+        headers: "{{ panel_api_headers }}"
+        validate_certs: "{{ panel_verify_tls }}"
+        return_content: false
+        status_code: [200, 204, 301, 302, 401, 403, 404]
+        timeout: 6
+      loop: "{{ panel_port_list | product(panel_probe_paths) | list }}"
+      loop_control:
+        label: ":{{ item.0 }}{{ item.1 }}"
+      register: panel_http
+      failed_when: false
+      changed_when: false
+      when: panel_host | length > 0
+
+    - name: Show non-5xx HTTP(S) probe URLs
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            panel_http.results
+            | selectattr('status', 'defined')
+            | selectattr('status', 'lt', 500)
+            | map(attribute='invocation.module_args.url')
+            | list
+          }}
+      when: panel_host | length > 0
+
+    - name: Require explicit apply before command payloads
+      ansible.builtin.assert:
+        that:
+          - panel_apply_changes | bool
+        fail_msg: "Refusing security/life-safety command unless panel_apply_changes=true."
+        success_msg: "Explicit apply enabled."
+      when: panel_command_payload | length > 0
+
+    - name: Optional authenticated API command (explicit apply only)
+      ansible.builtin.uri:
+        url: "{{ panel_scheme }}://{{ panel_host }}{{ panel_command_path }}"
+        method: "{{ panel_command_method }}"
+        headers: "{{ panel_api_headers }}"
+        body_format: json
+        body: "{{ panel_command_payload }}"
+        validate_certs: "{{ panel_verify_tls }}"
+        return_content: true
+        timeout: 15
+      register: panel_command_result
+      no_log: "{{ panel_api_token | length > 0 }}"
+      when:
+        - panel_apply_changes | bool
+        - panel_host | length > 0
+        - panel_command_path | length > 0
+        - panel_command_payload | length > 0

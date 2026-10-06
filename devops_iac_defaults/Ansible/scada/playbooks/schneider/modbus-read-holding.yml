@@ -1,0 +1,29 @@
+---
+- name: Schneider Electric — Modbus TCP read (M340/M580/PME gateways)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    schneider_modbus_port: "{{ modbus_port | int }}"
+    schneider_unit_id: "{{ modbus_unit_id | int }}"
+    plc_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ schneider_modbus_port | int }}"
+      unit_id: "{{ schneider_unit_id | int }}"
+      function_code: 3
+      address: "{{ modbus_holding_address | int }}"
+      count: "{{ modbus_holding_count | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read Schneider Modbus holding registers
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: schneider_read
+      changed_when: false
+
+    - name: Show values
+      ansible.builtin.debug:
+        msg: "{{ schneider_read.stdout | from_json }}"

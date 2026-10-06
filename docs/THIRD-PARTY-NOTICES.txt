@@ -1,0 +1,220 @@
+THIRD-PARTY NOTICES — Hayabusa Controller
+=========================================
+
+Publisher: TracedRoute
+Product: Hayabusa Controller (Windows and Linux)
+Last updated: 2026-09-30
+
+This product includes or interacts with third-party software. TracedRoute
+application code remains proprietary to TracedRoute / Hayabusa unless
+otherwise noted. The notices below are provided to meet open-source
+attribution and redistribution requirements.
+
+Where to find this file
+-----------------------
+- In-app / appliance: /static/THIRD-PARTY-NOTICES.txt
+  (also /opt/hayabusa-controller/docs/THIRD-PARTY-NOTICES.txt on Linux images)
+- Windows package: THIRD-PARTY-NOTICES.txt (bundle root) and
+  mesh/licenses/ (Tailscale-specific notices)
+- Source trees: hayabusa/controller-hotfixes/ and hayabusa-controller-win/
+
+========================================================================
+A. SHARED RUNTIME DEPENDENCIES (Windows and Linux controller)
+========================================================================
+
+The controller Python application may include the following packages
+(exact versions are listed in requirements.txt for each build):
+
+Package                 License (typical upstream)     Project
+----------------------  -----------------------------  ---------------------------------
+fastapi                 MIT                            https://github.com/fastapi/fastapi
+starlette               BSD-3-Clause                   https://github.com/encode/starlette
+uvicorn                 BSD-3-Clause                   https://github.com/encode/uvicorn
+jinja2                  BSD-3-Clause                   https://github.com/pallets/jinja
+python-multipart        Apache-2.0                     https://github.com/Kludex/python-multipart
+httpx                   BSD-3-Clause                   https://github.com/encode/httpx
+httpcore                BSD-3-Clause                   https://github.com/encode/httpcore
+anyio                   MIT                            https://github.com/agronholm/anyio
+itsdangerous            BSD-3-Clause                   https://github.com/pallets/itsdangerous
+cryptography            Apache-2.0 OR BSD-3-Clause     https://github.com/pyca/cryptography
+cffi                    MIT                            https://github.com/python-cffi/cffi
+websockets              BSD-3-Clause                   https://github.com/python-websockets/websockets
+pydantic                MIT                            https://github.com/pydantic/pydantic
+pydantic-settings       MIT                            https://github.com/pydantic/pydantic-settings
+pydantic-core           MIT                            https://github.com/pydantic/pydantic-core
+annotated-types         MIT                            https://github.com/annotated-types/annotated-types
+typing-extensions       PSF-2.0                        https://github.com/python/typing_extensions
+PyJWT                   MIT                            https://github.com/jpadilla/pyjwt
+msgpack                 Apache-2.0                     https://github.com/msgpack/msgpack-python
+setuptools              MIT                            https://github.com/pypa/setuptools
+click                   BSD-3-Clause                   https://github.com/pallets/click
+h11                     MIT                            https://github.com/python-hyper/h11
+idna                    BSD-3-Clause                   https://github.com/kjd/idna
+certifi                 MPL-2.0                        https://github.com/certifi/python-certifi
+sniffio                 MIT / Apache-2.0               https://github.com/python-trio/sniffio
+
+Each package’s upstream LICENSE / NOTICE (as applicable) applies.
+
+========================================================================
+B. WINDOWS-ONLY HOST SHELL / UI DEPENDENCIES
+========================================================================
+
+Package                 License (typical upstream)     Project
+----------------------  -----------------------------  ---------------------------------
+pystray                 BSD-3-Clause                   https://github.com/moses-palmer/pystray
+Pillow                  HPND-style / PIL               https://github.com/python-pillow/Pillow
+pywebview               BSD-3-Clause                   https://github.com/r0x0r/pywebview
+pywin32                 PSF-style / BSD-ish            https://github.com/mhammond/pywin32
+pyinstaller (build)     GPL-2.0-or-later WITH          https://github.com/pyinstaller/pyinstaller
+                        exception for frozen apps
+
+Microsoft Edge WebView2 Runtime (when used) is provided by Microsoft under
+Microsoft’s terms.
+
+dnsmasq.cmd on Windows is a TracedRoute-authored shim (not GNU dnsmasq).
+
+========================================================================
+C. MESH CLIENT (open-source Tailscale client)
+========================================================================
+
+Hayabusa Controller may include binaries built from the open-source
+Tailscale client:
+
+  Project:  https://github.com/tailscale/tailscale
+  License:  BSD-3-Clause
+  Windows:  mesh/bin/tailscale.exe , mesh/bin/tailscaled.exe
+            Notices: mesh/licenses/LICENSE.tailscale.txt
+                     mesh/licenses/NOTICE.windows-deps.md
+                     mesh/licenses/README.txt
+  Linux:    /usr/bin/tailscale , /usr/sbin/tailscaled (image builds)
+            Full license text: /opt/hayabusa-controller/licenses/LICENSE.tailscale.txt
+            (also shipped beside this notices file under licenses/)
+
+IMPORTANT:
+- These binaries are NOT Tailscale Inc’s proprietary Windows product and are
+  not endorsed by Tailscale Inc.
+- “Tailscale” is a trademark of its respective owner. Use of the open-source
+  client does not imply affiliation with or endorsement by Tailscale Inc.
+- Windows builds in this product use userspace networking and do NOT ship
+  Wintun (wintun.dll). Do not add Wintun without complying with the Wintun
+  prebuilt-binaries license from https://www.wintun.net/
+- Transitive Go module licenses for the Windows mesh build are summarized in
+  mesh/licenses/NOTICE.windows-deps.md
+
+========================================================================
+D. LINUX APPLIANCE — IaC RUNNERS + SYSTEM PACKAGES + OPTIONAL COMPONENTS
+========================================================================
+
+Security model: Hayabusa Core runs Ansible/OpenTofu/SECops after LAN Approve.
+The controller holds the vault and applies secret *names* only via lan.relay
+(SSH/TCP). Ansible-core and OpenTofu are not installed on the controller.
+
+1) Debian/Ubuntu packages in the Linux controller image (Bookworm slim base)
+   These are separate system utilities. Typical licenses (see each package’s
+   `/usr/share/doc/<pkg>/copyright` in the image). Versions below are from a
+   reference build and may move with security upgrades:
+
+   Package            Typical license family     Role
+   -----------------  -------------------------  ---------------------------
+   dnsmasq            GPL-2.0                      ZTP / DHCP-ish services
+   iptables           GPL-2.0                      firewall / mesh helpers
+   iproute2           GPL-2.0                      networking
+   openssh-client     BSD / OpenSSH                SSH for LAN IaC
+   rsync              GPL-3.0+                     sync / Image Nest
+   squashfs-tools     GPL-2.0+                     Image Nest
+   qemu-utils         GPL-2.0 / mixed              Image Nest disk helpers
+   wimtools           GPL-3.0+                     Image Nest WIM
+   xorriso            GPL-3.0+                     Image Nest ISO
+   p7zip-full         LGPL / unRAR restriction*    archives (*unRAR has extra
+                                                   terms; see package copyright)
+   rpm                GPL-2.0+                     package inspection
+   curl               MIT / curl                   HTTP fetch
+   ca-certificates    MPL-2.0 / mixed              trust store
+   openssl            Apache-2.0                   TLS utilities
+
+   GPL Corresponding Source for Debian packages: enable `deb-src` for the
+   Bookworm suite and run `apt-get source <package>=<version>` matching
+   `dpkg -l`, or request a source bundle for your image tag from
+   support@tracedroute.net.
+
+4) Apache Guacamole (optional remote console on Linux controller stacks)
+   License: Apache License 2.0
+   Projects: https://guacamole.apache.org/
+   Typical compose pins: guacamole/guacamole:1.5.5 , guacamole/guacd:1.5.5
+   Distribution: typically via official Docker images. Preserve their
+   LICENSE/NOTICE when redistributing images.
+   The Windows Store SKU does not ship full Guacamole (placeholder only;
+   optional compose under sidecar/ is for Linux-style lab setups).
+
+5) PostgreSQL (when used as Guacamole / support database containers)
+   License: PostgreSQL License (permissive)
+   Project: https://www.postgresql.org/
+   Typical compose pin: postgres:16-alpine
+
+6) Other optional stack containers (Prometheus, Grafana, nginx, etc.) remain
+   under their upstream licenses when deployed with full compose stacks.
+   Grafana is AGPL-3.0 — review before redistribution / multi-tenant hosting.
+
+7) Optional host RF / robotics tools (not bundled by default; used when present
+   for controller-edge SDR / ADS-B / MAVLink under Hayabusa Core orchestration)
+   Package / library     Typical license family     Role
+   --------------------  -------------------------  ---------------------------
+   rtl-sdr / rtl_fm      GPL lineage / package      NOAA weather / scanner RX
+   dump1090(-fa)         GPL lineage                Local ADS-B aircraft JSON
+   PyMAVLink             LGPLv3 + MIT-exception     MAVLink vehicle telemetry
+                                                   (generated code exception)
+   ffmpeg                GPL-2+ (distro builds)     SDR audio encode / stream
+
+   Hayabusa Controller treats these as separate host processes or Python
+   packages when installed by the operator. Provide matching package notices
+   and GPL corresponding source where you redistribute the tools themselves.
+   Core’s THIRD_PARTY_NOTICES.md has the fuller robotics/SDR matrix.
+
+8) Python base image: python:3.12-slim-bookworm (PSF License for Python;
+   Debian packages in the slim image retain their upstream copyrights).
+
+9) uvicorn[standard] may pull extras such as httptools, uvloop (Linux),
+   watchfiles, and PyYAML under their upstream MIT/BSD/Apache licenses.
+
+========================================================================
+E. COMMON OPEN-SOURCE LICENSE TEXTS (REFERENCE)
+========================================================================
+
+--- MIT License (representative) ---
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+--- BSD 3-Clause (representative; see also Tailscale LICENSE) ---
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that copyright notice, conditions, and
+disclaimer are retained. The name of the copyright holder may not be used to
+endorse or promote products derived from this software without specific prior
+written permission.
+
+--- Apache License 2.0 ---
+Full text: https://www.apache.org/licenses/LICENSE-2.0
+
+--- GPL-2.0 / GPL-2.0+ / GPL-3.0+ (Debian packages such as dnsmasq) ---
+See each package’s `/usr/share/doc/<pkg>/copyright` in the Linux image.
+Corresponding Source: `apt-get source <pkg>=<ver>` on Bookworm with deb-src,
+or request a source bundle for your image tag from support@tracedroute.net.
+
+========================================================================
+F. CONTACT
+========================================================================
+
+Questions about third-party notices for Hayabusa Controller:
+  support@tracedroute.net
+  https://service.tracedroute.net/support/
+  https://tracedroute.net

@@ -1,0 +1,25 @@
+---
+- name: FUXA SCADA/HMI — HTTP health check
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    fuxa_url: "{{ fuxa_internal_url | default('http://127.0.0.1:1881/') }}"
+  tasks:
+    - name: Probe embedded FUXA runtime
+      ansible.builtin.command:
+        cmd: >
+          python3 "{{ playbook_dir }}/../scripts/plc_cli.py" fuxa-status
+          --url {{ fuxa_url | quote }}
+      register: fuxa_status
+      changed_when: false
+
+    - name: Show FUXA status
+      ansible.builtin.debug:
+        msg: "{{ fuxa_status.stdout | from_json }}"
+
+    - name: Fail when FUXA is unreachable
+      ansible.builtin.assert:
+        that:
+          - (fuxa_status.stdout | from_json).result.reachable | default(false)
+        fail_msg: "FUXA not reachable at {{ fuxa_url }} — confirm Hayabusa started FUXA (see /api/scada/status)."

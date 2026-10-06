@@ -1,0 +1,28 @@
+---
+- name: OPC UA — read multiple nodes (opc-plc lab)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    opcua_node_ids:
+      - "ns=3;s=FastUInt1"
+      - "ns=3;s=FastUInt2"
+      - "ns=3;s=FastUInt3"
+      - "ns=3;s=FastUInt4"
+      - "ns=3;s=FastUInt5"
+  tasks:
+    - name: Read each OPC UA node
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ {'protocol': 'opcua', 'host': plc_host, 'port': opcua_port | int, 'node_id': item, 'security': opcua_security | default('auto'), 'timeout': plc_timeout | float} | to_json }}"
+      loop: "{{ opcua_node_ids }}"
+      register: opcua_reads
+      changed_when: false
+
+    - name: Show node values
+      ansible.builtin.debug:
+        msg: "{{ item.stdout | from_json }}"
+      loop: "{{ opcua_reads.results }}"
+      loop_control:
+        label: "{{ item.item }}"

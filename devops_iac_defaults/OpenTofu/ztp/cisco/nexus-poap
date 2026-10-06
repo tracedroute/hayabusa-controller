@@ -1,0 +1,83 @@
+#!/bin/tclsh
+# Nexus 9500v POAP Provisioning Script
+# Hardcoded image: nxos64-cs.10.5.2.F.bin
+
+proc send_cmd {cmd} {
+    catch {cli $cmd} result
+    return $result
+}
+
+# --- Hardcoded boot image ---
+set boot_image "nxos64-cs.10.5.2.F.bin"
+puts "Boot image: $boot_image"
+
+# --- Verify image actually exists on bootflash before proceeding ---
+set dir_out [send_cmd "dir bootflash:"]
+if {![string match "*$boot_image*" $dir_out]} {
+    puts "FATAL: $boot_image not found on bootflash. Aborting."
+    puts "Bootflash contents:\n$dir_out"
+    exit 1
+}
+puts "CONFIRMED: $boot_image found on bootflash"
+
+# --- Build provisioning config ---
+set cmds [list \
+    "configure terminal" \
+    "hostname Cisco-Nexus-9500v" \
+    "feature ssh" \
+    "username admin password admin123 role network-admin" \
+    "ip ssh version 2" \
+    "line vty 0 4" \
+    "transport input ssh" \
+    "exit" \
+    "spanning-tree mode rapid-pvst" \
+    "no boot nxos" \
+    "boot nxos bootflash:/$boot_image" \
+    "end" \
+]
+
+# --- Execute config commands ---
+foreach cmd $cmds {
+    puts ">>> $cmd"
+    set result [send_cmd $cmd]
+    if {[string length $result] > 0} {
+        puts "    Result: $result"
+    }
+}
+
+# --- Verify boot variable was set ---
+set boot_check [send_cmd "show boot"]
+puts "\nBoot variable check:\n$boot_check"
+
+if {![string match "*$boot_image*" $boot_check]} {
+    puts "CRITICAL: Boot variable not set correctly — aborting before save"
+    exit 1
+}
+puts "CONFIRMED: Boot variable set correctly"
+
+# --- Wait for system to settle ---
+puts "Waiting 3 seconds before saving..."
+after 3000
+
+# --- Save config ---
+puts ">>> copy running-config startup-config"
+catch {cli "copy running-config startup-config\n"} save_result
+puts "Save result: $save_result"
+
+after 2000
+
+# --- Confirm boot var made it into startup-config ---
+set startup_check [send_cmd "show startup-config | include boot"]
+puts "Boot var in startup-config:\n$startup_check"
+
+if {![string match "*$boot_image*" $startup_check]} {
+    puts "CRITICAL: Boot var NOT saved to startup-config — will loop to loader on reload"
+    exit 1
+}
+
+puts ""
+puts "=========================================="
+puts "POAP PROVISIONING COMPLETE"
+puts "Boot image: bootflash:/$boot_image"
+puts "Startup-config: verified"
+puts "=========================================="

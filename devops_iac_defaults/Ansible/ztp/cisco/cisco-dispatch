@@ -1,0 +1,15 @@
+configure terminal
+username admin privilege 15 password admin123
+ip ssh version 2
+ip ssh authentication-retries 3
+line vty 0 4
+ transport input ssh
+ login local
+ exit
+ip domain-name lab.local
+crypto key generate rsa general-keys modulus 2048
+hostname Cisco-Router
+no logging console
+end
+write memory
+exit

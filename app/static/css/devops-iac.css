@@ -1,0 +1,458 @@
+/* Extracted from Hayabusa workstations.html — Ansible & OpenTofu workspace */
+        .devops-iac-overlay {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.72);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2600;
+            padding: min(2.5vh, 20px) min(2.5vw, 16px);
+            box-sizing: border-box;
+        }
+        .devops-iac-panel {
+            width: min(1150px, 97vw);
+            max-height: min(92vh, 900px);
+            overflow: auto;
+            background: linear-gradient(165deg, #1a2228 0%, #0f1316 100%);
+            border: 1px solid rgba(201, 162, 39, 0.35);
+            border-radius: 14px;
+            box-shadow: 0 28px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            color: #e8e8e8;
+            position: relative;
+        }
+        .devops-iac-panel__head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 14px 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            position: sticky;
+            top: 0;
+            background: linear-gradient(180deg, rgba(30,38,44,0.98) 0%, rgba(22,28,32,0.95) 100%);
+            z-index: 1;
+        }
+        .devops-iac-panel__head h2 {
+            margin: 0;
+            font-size: 18px;
+            color: #c9a227;
+            letter-spacing: 0.3px;
+        }
+        .devops-iac-panel__body {
+            padding: 12px 18px 18px;
+        }
+        .devops-iac-overlay--pip {
+            z-index: 10020 !important;
+            background: transparent !important;
+            pointer-events: none !important;
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding: 0;
+        }
+        .devops-iac-overlay--pip .devops-iac-panel {
+            pointer-events: auto;
+        }
+        .devops-iac-panel--max {
+            width: min(96vw, 1400px) !important;
+            max-width: 96vw !important;
+            height: min(92vh, 920px) !important;
+            max-height: 92vh !important;
+        }
+        .devops-iac-panel--pip {
+            position: fixed !important;
+            margin: 0 !important;
+            width: 480px;
+            height: min(68vh, 640px);
+            min-width: 300px;
+            min-height: 200px;
+            max-width: min(96vw, 920px);
+            max-height: 90vh;
+            resize: both;
+            overflow: auto;
+            z-index: 10040;
+            right: 20px;
+            bottom: 20px;
+            left: auto;
+            top: auto;
+        }
+        .devops-iac-panel--pip .devops-iac-panel__drag {
+            cursor: grab;
+        }
+        .devops-iac-panel--pip .devops-iac-head-tools,
+        .devops-iac-panel--pip .devops-iac-head-tools * {
+            cursor: auto;
+        }
+        .devops-iac-panel--pip .devops-iac-panel__drag--active,
+        .devops-iac-panel--pip .devops-iac-panel__drag--active * {
+            cursor: grabbing;
+        }
+        .devops-iac-panel__drag {
+            flex: 1;
+            min-width: 0;
+            user-select: none;
+        }
+        .devops-iac-head-tools {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+        .devops-iac-tool-btn {
+            background: rgba(0,0,0,0.3);
+            color: #b8c2c8;
+            border: 1px solid rgba(201, 162, 39, 0.28);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            line-height: 1.2;
+        }
+        .devops-iac-tool-btn:hover {
+            color: #c9a227;
+            border-color: rgba(201, 162, 39, 0.5);
+        }
+        .devops-iac-tool-btn[aria-pressed="true"] {
+            color: #c9a227;
+            background: rgba(201, 162, 39, 0.12);
+        }
+        .devops-iac-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 4px 0 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .devops-iac-tab-btn {
+            border: 1px solid rgba(255,255,255,0.12);
+            border-bottom: none;
+            border-radius: 10px 10px 0 0;
+            background: rgba(0,0,0,0.22);
+            color: #9aa0a6;
+            padding: 8px 14px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .devops-iac-tab-btn[aria-selected="true"] {
+            color: #c9a227;
+            background: rgba(201,162,39,0.13);
+            border-color: rgba(201,162,39,0.45);
+        }
+        .devops-iac-tab-pane {
+            display: none;
+        }
+        .devops-iac-tab-pane.is-active {
+            display: block;
+        }
+        .devops-iac-file-browser {
+            display: flex;
+            flex-direction: column;
+            min-height: min(64vh, 620px);
+            background: #ececec;
+            border: 1px solid #9c9c9c;
+            color: #111;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            font-size: 12px;
+            overflow: hidden;
+        }
+        .devops-iac-file-browser__pathbar {
+            display: grid;
+            grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto auto;
+            gap: 6px;
+            align-items: center;
+            padding: 5px 6px;
+            background: #f7f7f7;
+            border-bottom: 1px solid #bdbdbd;
+        }
+        .devops-iac-file-browser__pathbar label {
+            color: #111;
+            font-weight: 600;
+        }
+        .devops-iac-file-browser__pathbar input,
+        .devops-iac-file-browser__selected-input {
+            height: 24px;
+            border: 1px solid #9d9d9d;
+            background: #fff;
+            color: #111;
+            padding: 2px 6px;
+            font-size: 12px;
+            box-sizing: border-box;
+        }
+        .devops-iac-file-browser__btn {
+            min-height: 24px;
+            border: 1px solid #8f8f8f;
+            border-radius: 2px;
+            background: linear-gradient(#ffffff, #d8d8d8);
+            color: #111;
+            padding: 2px 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .devops-iac-file-browser__btn:hover {
+            background: linear-gradient(#ffffff, #c9def7);
+            border-color: #5f8fc4;
+        }
+        .devops-iac-file-browser__btn--danger {
+            color: #8b0000;
+        }
+        .devops-iac-file-browser.is-drop-target {
+            outline: 3px solid rgba(93,147,162,0.55);
+            outline-offset: -4px;
+        }
+        .devops-iac-file-browser__split {
+            display: grid;
+            grid-template-columns: minmax(220px, 34%) minmax(360px, 1fr);
+            min-height: 290px;
+            border-bottom: 1px solid #bdbdbd;
+        }
+        .devops-iac-file-browser__side,
+        .devops-iac-file-browser__main,
+        .devops-iac-file-browser__editor {
+            background: #fff;
+            border-radius: 0;
+            color: #111;
+        }
+        .devops-iac-file-browser__side {
+            padding: 4px 0 4px 4px;
+            overflow: auto;
+            border-right: 1px solid #bdbdbd;
+        }
+        .devops-iac-file-browser__main {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .devops-iac-file-browser__columns,
+        .devops-iac-file-row {
+            display: grid;
+            grid-template-columns: minmax(210px, 1fr) 95px 130px 160px;
+            align-items: center;
+        }
+        .devops-iac-file-browser__columns {
+            background: #f3f3f3;
+            border-bottom: 1px solid #bdbdbd;
+            color: #111;
+            font-weight: 600;
+            line-height: 24px;
+        }
+        .devops-iac-file-browser__columns span {
+            padding: 0 8px;
+            border-right: 1px solid #c8c8c8;
+        }
+        .devops-iac-file-browser__list {
+            overflow: auto;
+            min-height: 250px;
+            background: #fff;
+        }
+        .devops-iac-file-row {
+            color: #111;
+            border-bottom: 1px solid #ededed;
+            font-size: 12px;
+            cursor: pointer;
+            min-height: 22px;
+        }
+        .devops-iac-file-row:hover,
+        .devops-iac-file-row.is-selected,
+        .devops-iac-file-row.is-drag-over {
+            background: #dcecff;
+        }
+        .devops-iac-file-row strong,
+        .devops-iac-file-row span {
+            padding: 3px 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .devops-iac-file-row__meta {
+            color: #333;
+            font-size: 11px;
+        }
+        .devops-iac-file-tree-button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            border: none;
+            background: #fff;
+            color: #111;
+            padding: 2px 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .devops-iac-file-tree-button:hover {
+            background: #dcecff;
+        }
+        .devops-iac-file-tree-button.is-drag-over {
+            background: #c5e3ff;
+            outline: 1px solid #5f8fc4;
+        }
+        .devops-iac-file-browser__editor {
+            border-top: 1px solid #bdbdbd;
+            display: flex;
+            flex-direction: column;
+            min-height: 190px;
+            overflow: hidden;
+        }
+        .devops-iac-file-browser__editor-head {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+            padding: 5px 6px;
+            background: #f7f7f7;
+            border-bottom: 1px solid #bdbdbd;
+            color: #111;
+        }
+        .devops-iac-file-browser__editor textarea {
+            flex: 1;
+            min-height: 150px;
+            border: none;
+            outline: none;
+            resize: vertical;
+            background: #fff;
+            color: #111;
+            padding: 8px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .devops-iac-file-browser__transfer {
+            min-height: 82px;
+            background: #fff;
+            border-top: 1px solid #bdbdbd;
+            color: #111;
+            display: flex;
+            flex-direction: column;
+        }
+        .devops-iac-file-browser__transfer-head {
+            padding: 5px 8px;
+            border-bottom: 1px solid #d3d3d3;
+            color: #111;
+        }
+        .devops-iac-file-browser__transfer-body {
+            flex: 1;
+            padding: 8px;
+            color: #666;
+        }
+        .devops-iac-file-browser__transfer-tabs {
+            display: flex;
+            gap: 2px;
+            border-top: 1px solid #bdbdbd;
+            background: #efefef;
+        }
+        .devops-iac-file-browser__transfer-tabs span {
+            padding: 4px 10px;
+            border-right: 1px solid #bdbdbd;
+            background: #fafafa;
+            color: #111;
+        }
+        @media (max-width: 640px) {
+            .devops-iac-file-browser__pathbar,
+            .devops-iac-file-browser__split {
+                grid-template-columns: 1fr;
+            }
+            .devops-iac-file-browser__side {
+                border-right: none;
+                border-bottom: 1px solid #bdbdbd;
+                max-height: 160px;
+            }
+            .devops-iac-file-row {
+                grid-template-columns: 1fr;
+                gap: 3px;
+            }
+        }
+        .devops-iac-ctxmenu {
+            position: fixed;
+            z-index: 10050;
+            min-width: 150px;
+            background: #1e2428;
+            border: 1px solid rgba(201, 162, 39, 0.4);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+            padding: 4px 0;
+            display: none;
+        }
+        .devops-iac-ctxmenu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 8px 14px;
+            border: none;
+            background: transparent;
+            color: #e0e0e0;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .devops-iac-ctxmenu button:hover {
+            background: rgba(93, 147, 162, 0.2);
+            color: #5d93a2;
+        }
+    </style>
+
+/* Controller full-page: always show workspace */
+body.controller-devops #devopsIacOverlay{display:flex!important;background:radial-gradient(1200px 600px at 10% -10%,rgba(93,147,162,.22),transparent 60%),#071018;}
+body.controller-devops .devops-iac-panel{max-height:96vh;width:min(1280px,98vw);}
+body.controller-devops .controller-topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;color:#cfe7ef;font-family:Poppins,system-ui,sans-serif;position:fixed;top:0;left:0;right:0;z-index:2700;background:rgba(7,16,24,.85);backdrop-filter:blur(6px);border-bottom:1px solid rgba(255,255,255,.08);}
+body.controller-devops .controller-topbar a{color:#7dd3fc;text-decoration:none;margin-left:12px;}
+body.controller-devops #devopsIacOverlay{padding-top:56px;}
+
+        .devops-iac-structure-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin: 0 0 12px;
+            font-size: 11px;
+            color: #9aa0a6;
+        }
+        .devops-iac-structure-bar strong {
+            color: #cbd5e1;
+            font-weight: 600;
+        }
+        .devops-iac-structure-pill {
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 999px;
+            background: rgba(255,255,255,0.04);
+            color: #b6c2cc;
+            padding: 5px 12px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .devops-iac-structure-pill[aria-pressed="true"] {
+            color: #061426;
+            background: linear-gradient(135deg, #7fd4b5 0%, #5d93a2 100%);
+            border-color: transparent;
+            font-weight: 700;
+        }
+        .devops-iac-structure-pill--ansible[aria-pressed="true"] {
+            background: linear-gradient(135deg, #c9a227 0%, #b45309 100%);
+        }
+        .devops-iac-structure-pill--security[aria-pressed="true"] {
+            background: linear-gradient(135deg, #f87171 0%, #b91c1c 100%);
+        }
+        .devops-iac-badge {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 6px;
+            border-radius: 999px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            vertical-align: middle;
+            line-height: 1.4;
+        }
+        .devops-iac-badge--tofu {
+            color: #0b3b32;
+            background: rgba(127, 212, 181, 0.85);
+        }
+        .devops-iac-badge--ansible {
+            color: #3b2a05;
+            background: rgba(201, 162, 39, 0.85);
+        }
+        .devops-iac-badge--security {
+            color: #450a0a;
+            background: rgba(248, 113, 113, 0.9);
+        }
+

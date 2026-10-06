@@ -1,0 +1,22 @@
+configure terminal
+hostname Arista-710P-7200S
+!
+ip routing
+!
+interface Management1
+ ip address 192.168.2.80 255.255.255.0
+!
+username admin privilege 15 secret admin123
+!
+ip ssh version 2
+!
+line vty 0 4
+ transport input ssh
+ login local
+!
+spanning-tree mode rapid-pvst
+!
+no event-monitor
+!
+end
+write memory

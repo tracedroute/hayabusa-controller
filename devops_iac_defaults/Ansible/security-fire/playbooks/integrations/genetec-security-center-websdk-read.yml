@@ -1,0 +1,47 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: "Genetec Security Center — Web SDK read"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    security_api_base_url: "{{ lookup('env', 'SECURITY_API_BASE_URL') | default('', true) }}"
+    security_api_path: "{{ lookup('env', 'SECURITY_API_PATH') | default('/api/SecurityCenter/Status', true) }}"
+    security_api_token: "{{ lookup('env', 'SECURITY_PANEL_TOKEN') | default(lookup('env', 'SECURITY_API_TOKEN') | default('', true), true) }}"
+    security_verify_tls: "{{ lookup('env', 'SECURITY_PANEL_VERIFY_TLS') | default('false', true) | bool }}"
+    security_api_url: "{{ security_api_base_url.rstrip('/') ~ security_api_path }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          vendor: "Genetec Security Center"
+          notes: "Read Web SDK / report status paths only."
+          mode: "read-only API GET"
+
+    - name: Require API base URL
+      ansible.builtin.assert:
+        that:
+          - security_api_base_url | length > 0
+        fail_msg: "Set SECURITY_API_BASE_URL to the vendor API root (e.g. https://pacs.example.com)."
+        success_msg: "API base configured."
+
+    - name: HTTP GET vendor status/list endpoint
+      ansible.builtin.uri:
+        url: "{{ security_api_url }}"
+        method: GET
+        headers: "{{ {'Authorization': 'Bearer ' ~ security_api_token, 'Accept': 'application/json'} if (security_api_token | length > 0) else {'Accept': 'application/json'} }}"
+        validate_certs: "{{ security_verify_tls }}"
+        return_content: true
+        status_code: [200, 201, 204, 401, 403, 404]
+        timeout: 12
+      register: api_get
+      failed_when: false
+      changed_when: false
+      no_log: "{{ security_api_token | length > 0 }}"
+
+    - name: Show HTTP status
+      ansible.builtin.debug:
+        msg:
+          url: "{{ security_api_url }}"
+          status: "{{ api_get.status | default('n/a') }}"
+          ok: "{{ api_get.status is defined and (api_get.status | int) < 500 }}"

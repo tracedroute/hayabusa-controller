@@ -1,0 +1,50 @@
+---
+- name: OPC UA — signed write/read verify (opc-plc lab, same session)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    opcua_write_payload:
+      protocol: opcua
+      host: "{{ plc_host }}"
+      port: "{{ opcua_port | int }}"
+      node_id: "{{ opcua_verify_node_id | default('ns=3;s=FastUInt1') }}"
+      value: "{{ opcua_verify_write_value | default(4242) | int }}"
+      security: "{{ opcua_security | default('auto') }}"
+      verify: true
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_opcua_write=true for OPC UA signed write verification.
+      when: not (allow_opcua_write | default(false) | bool)
+
+    - name: Signed write with immediate read-back (same session)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env OPCUA_WRITE
+      environment:
+        OPCUA_WRITE: "{{ opcua_write_payload | to_json }}"
+      register: opcua_write
+      changed_when: true
+
+    - name: Parse OPC UA write/read result
+      ansible.builtin.set_fact:
+        opcua_write_result: "{{ opcua_write.stdout | from_json }}"
+
+    - name: Assert signed write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - opcua_write_result.success | bool
+          - opcua_write_result.result.security == 'Basic256Sha256,Sign'
+          - opcua_write_result.result.read_back is defined
+          - (opcua_write_result.result.read_back | int) == (opcua_verify_write_value | default(4242) | int)
+        fail_msg: "OPC UA signed verify failed: {{ opcua_write_result | default({}) }}"
+
+    - name: Show OPC UA signed round-trip
+      ansible.builtin.debug:
+        msg:
+          node_id: "{{ opcua_verify_node_id | default('ns=3;s=FastUInt1') }}"
+          security: "{{ opcua_write_result.result.security }}"
+          written: "{{ opcua_verify_write_value | default(4242) }}"
+          read_back: "{{ opcua_write_result.result.read_back }}"

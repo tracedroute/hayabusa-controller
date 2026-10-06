@@ -1,0 +1,59 @@
+---
+# Defaults for SCADA & PLC playbooks. Override with -e or host/group vars.
+plc_host: "192.168.2.137"
+plc_timeout: 5
+
+lab_host: "192.168.2.137"
+lab_ssh_user: "pnet"
+lab_ssh_pass: "pnet"
+
+modbus_port: 502
+modbus_unit_id: 1
+modbus_holding_address: 0
+modbus_holding_count: 5
+modbus_coil_address: 0
+modbus_coil_count: 8
+
+siemens_port: 102
+siemens_rack: 0
+siemens_slot: 2
+siemens_db_number: 1
+siemens_db_start: 0
+siemens_db_size: 4
+
+# Rockwell CIP — lab uses cpppo enip client; hardware uses pycomm3
+ab_path: "{{ plc_host }}/0"
+ab_tags: "MotorRun,MotorSpeed"
+ab_verify_tag: MotorSpeed
+ab_verify_write_value: 77
+
+openplc_v4_user: labuser
+openplc_v4_pass: "LabOps123!"
+
+modbus_verify_address: 100
+modbus_verify_write_value: 999
+
+beckhoff_ams_net_id: "{{ plc_host }}.1.1"
+beckhoff_ads_port: 48898
+beckhoff_rest_port: 8080
+# SoftBeckhoff publishes these via GET /symbols (real TwinCAT uses ADS with project symbols)
+beckhoff_symbols: "test1,test2"
+
+mitsubishi_port: 5007
+mitsubishi_device: "D0"
+mitsubishi_count: 5
+
+omron_fins_port: 9600
+omron_fins_area: "dm"
+omron_fins_address: 0
+omron_fins_count: 5
+omron_dest_node: 0
+omron_source_node: 25
+
+opcua_port: 50000
+opcua_node_id: "ns=3;s=FastUInt1"
+opcua_security: auto
+
+openplc_v4_port: 8443
+
+fuxa_internal_url: "http://127.0.0.1:1881/"

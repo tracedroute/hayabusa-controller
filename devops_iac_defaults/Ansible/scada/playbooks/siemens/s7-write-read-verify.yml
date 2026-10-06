@@ -1,0 +1,82 @@
+---
+- name: Siemens S7 — DB write/read verify (Snap7 ISO-on-TCP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    s7_verify_hex: "{{ s7_verify_hex | default('4849') }}"
+    s7_read_payload:
+      protocol: siemens_s7
+      host: "{{ plc_host }}"
+      port: "{{ siemens_port | int }}"
+      rack: "{{ siemens_rack | int }}"
+      slot: "{{ siemens_slot | int }}"
+      db_number: "{{ siemens_db_number | int }}"
+      address: "{{ siemens_db_start | int }}"
+      size: "{{ s7_verify_size | default(2) | int }}"
+      timeout: "{{ plc_timeout | float }}"
+    s7_write_payload:
+      protocol: siemens_s7
+      host: "{{ plc_host }}"
+      port: "{{ siemens_port | int }}"
+      rack: "{{ siemens_rack | int }}"
+      slot: "{{ siemens_slot | int }}"
+      db_number: "{{ siemens_db_number | int }}"
+      address: "{{ siemens_db_start | int }}"
+      hex: "{{ s7_verify_hex }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_s7_write=true for S7 DB write verification.
+      when: not (allow_s7_write | default(false) | bool)
+
+    - name: Read DB before write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env S7_READ
+      environment:
+        S7_READ: "{{ s7_read_payload | to_json }}"
+      register: s7_before
+      changed_when: false
+
+    - name: Write DB bytes
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env S7_WRITE
+      environment:
+        S7_WRITE: "{{ s7_write_payload | to_json }}"
+      register: s7_write
+      changed_when: true
+
+    - name: Read DB after write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env S7_READ
+      environment:
+        S7_READ: "{{ s7_read_payload | to_json }}"
+      register: s7_after
+      changed_when: false
+
+    - name: Parse S7 results
+      ansible.builtin.set_fact:
+        s7_before_result: "{{ s7_before.stdout | from_json }}"
+        s7_write_result: "{{ s7_write.stdout | from_json }}"
+        s7_after_result: "{{ s7_after.stdout | from_json }}"
+
+    - name: Assert S7 write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - s7_write_result.success | bool
+          - s7_after_result.success | bool
+          - s7_after_result.result.hex == s7_verify_hex
+        fail_msg: >-
+          S7 verify failed DB{{ siemens_db_number }} @ {{ siemens_db_start }}.
+          before={{ s7_before_result }} write={{ s7_write_result }} after={{ s7_after_result }}
+
+    - name: Show S7 round-trip
+      ansible.builtin.debug:
+        msg:
+          db: "{{ siemens_db_number }}"
+          offset: "{{ siemens_db_start }}"
+          before_hex: "{{ s7_before_result.result.hex }}"
+          written_hex: "{{ s7_verify_hex }}"
+          after_hex: "{{ s7_after_result.result.hex }}"

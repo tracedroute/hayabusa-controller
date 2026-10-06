@@ -1,0 +1,18 @@
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+.ansible-venv/
+
+# --- OpenTofu / Ansible defaults (added by scaffold) ---
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.auto.tfvars
+*.auto.tfvars.json
+out/
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

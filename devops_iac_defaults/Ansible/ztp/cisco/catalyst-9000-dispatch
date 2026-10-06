@@ -1,0 +1,12 @@
+configure terminal
+hostname Cisco-Catalyst-9000
+username admin privilege 15 secret admin123
+ip ssh version 2
+crypto key generate rsa modulus 2048
+line vty 0 4
+ transport input ssh
+exit
+spanning-tree mode rapid-pvst
+end
+write memory
+exit

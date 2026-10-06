@@ -1,0 +1,23 @@
+!! Cisco IOS-XR ZTP Configuration Script
+!! For NCS 500/5500/8000 and IOS-XR devices
+!!
+configure terminal
+hostname Cisco-XR-Router
+interface MgmtEth0/RP0/CPU0/0
+ ipv4 address 192.168.2.150 255.255.255.0
+ exit
+interface GigabitEthernet0/0/0/0
+ ipv4 address 192.168.100.1 255.255.255.0
+ no shutdown
+ exit
+ssh server v2
+ssh server netconf port 830
+line default
+ transport input ssh
+ exit
+username admin
+ group root-lr
+ secret admin123
+ exit
+end
+write memory

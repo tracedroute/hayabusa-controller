@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Setup · Hayabusa Controller Node</title>
+  <meta name="csrf-token" content="{{ csrf_token }}" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/controller.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" />
+</head>
+<body class="setup-immersive">
+  <header class="setup-top">
+    <div class="setup-top-brand">
+      <p class="setup-top-mark">Hayabusa Controller Node</p>
+      <p class="setup-top-sub">
+        {{ user.email or user.username }}
+      </p>
+    </div>
+    <a class="btn btn-primary" href="/logout">Sign out</a>
+  </header>
+
+  <audio
+    id="setupMusic"
+    src="/static/audio/in_your_arms_kevin_macleod.mp3"
+    loop
+    preload="auto"
+    playsinline
+  ></audio>
+
+  <main class="setup-stage">
+    <div id="setupWaiting" class="setup-wait" hidden>
+      <h2>Waiting for administrator</h2>
+      <p>
+        This controller has not finished first-run setup. Only the administrator who created this node can complete it.
+      </p>
+    </div>
+
+    <div id="setupWizard" class="setup-wizard" hidden>
+      <div class="setup-choice-scene" id="setupChoiceStep">
+        <div class="setup-copy">
+          <p class="setup-kicker">Hayabusa Controller Node</p>
+          <h1>Choose your road</h1>
+          <p class="setup-lead" id="setupLead">
+            First administrator setup. Hover a path to bring it to life, then click to continue.
+          </p>
+        </div>
+
+        <div class="setup-video-split" id="setupFork" role="group" aria-label="Setup path">
+          <button type="button" class="setup-video-path setup-video-path--novice" id="chooseNovice" data-mode="novice">
+            <video
+              class="setup-path-video"
+              id="videoNovice"
+              muted
+              loop
+              playsinline
+              preload="auto"
+              poster=""
+            >
+              <source src="/static/videos/setup/novice_city_street_bus_31176952.mp4" type="video/mp4" />
+            </video>
+            <span class="setup-path-scrim" aria-hidden="true"></span>
+            <span class="setup-path-copy">
+              <span class="setup-path-route">Route 01</span>
+              <span class="setup-path-title">Novice</span>
+              <span class="setup-path-desc">
+                Those new to DevOps who want to configure their infrastructure, but want a simplified approach.
+              </span>
+              <span class="setup-path-cta">Take this road</span>
+            </span>
+          </button>
+
+          <button type="button" class="setup-video-path setup-video-path--advanced" id="chooseAdvanced" data-mode="advanced">
+            <video
+              class="setup-path-video"
+              id="videoAdvanced"
+              muted
+              loop
+              playsinline
+              preload="auto"
+              poster=""
+            >
+              <source src="/static/videos/setup/advanced_streetcar_33536274.mp4" type="video/mp4" />
+            </video>
+            <span class="setup-path-scrim" aria-hidden="true"></span>
+            <span class="setup-path-copy">
+              <span class="setup-path-route">Route 02</span>
+              <span class="setup-path-title">Advanced</span>
+              <span class="setup-path-desc">
+                Those who are experienced with DevOps and infrastructure as code. Requires connecting a GitLab or GitHub repository.
+              </span>
+              <span class="setup-path-cta">Take this road</span>
+            </span>
+          </button>
+        </div>
+
+        <!-- Kevin MacLeod / Incompetech CC BY 3.0 requires attribution -->
+        <p class="setup-music-credit">
+          Music: <a href="https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1500042" target="_blank" rel="noopener noreferrer">In Your Arms</a>
+          by Kevin MacLeod
+          (<a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">CC BY 3.0</a>)
+        </p>
+      </div>
+
+      <section class="setup-follow setup-panel" id="setupNoviceConfirm" hidden>
+        <div class="setup-follow-card">
+          <h2>Confirm novice setup</h2>
+          <p>
+            Local Ansible/OpenTofu under the controller workspace remains the source of truth.
+            If you were on Advanced/GitOps, Hayabusa will push the current Git tree onto this controller first
+            (packaged default playbooks are never overwritten). You can enable GitOps later from the dashboard.
+          </p>
+          <div class="form-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button type="button" class="btn btn-ghost" id="noviceBackBtn">Back to the fork</button>
+            <button type="button" class="btn btn-primary" id="noviceConfirmBtn">Finish setup</button>
+          </div>
+          <p class="section-desc setup-msg" id="noviceMsg" hidden></p>
+        </div>
+      </section>
+
+      <section class="setup-follow setup-panel" id="setupAdvancedForm" hidden>
+        <div class="setup-follow-card setup-follow-card--wide">
+          <h2>Configure GitOps</h2>
+          <p>
+            Advanced mode uses GitHub/GitLab as the source of truth. Admins link a Git instance to a
+            <strong>controller team</strong>. People may only publish playbooks they own (or their team owns),
+            and only after signing in with a matching GitHub/GitLab account. Site-wide Core↔controller
+            jobs (Approve + lan.relay) are unchanged.
+          </p>
+          <form id="advancedForm" class="form-grid form-grid-2">
+            <label>Team for this Git binding <span class="muted">(existing team id)</span>
+              <input type="text" id="advTeamId" name="team_id" placeholder="netops" autocomplete="off" />
+            </label>
+            <label>Or create team name
+              <input type="text" id="advTeamName" name="team_name" placeholder="Network Ops" autocomplete="off" />
+            </label>
+            <label>Provider
+              <select id="advProvider" name="provider">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab</option>
+              </select>
+            </label>
+            <label>Instance base URL
+              <input type="url" id="advBaseUrl" name="base_url" placeholder="https://github.com or https://gitlab.example.com" required />
+            </label>
+            <label>Ansible / OpenTofu repository <span class="muted">(org/name)</span>
+              <input type="text" id="advRepo" name="repo" placeholder="acme/hayabusa-iac" autocomplete="off" required />
+            </label>
+            <label>Branch / ref
+              <input type="text" id="advRef" name="ref" placeholder="main" value="main" />
+            </label>
+            <label>Path prefix <span class="muted">(optional)</span>
+              <input type="text" id="advPathPrefix" name="path_prefix" placeholder="leave empty if Ansible/ and OpenTofu/ are at repo root" />
+            </label>
+            <label>Poll interval (seconds)
+              <input type="number" id="advPoll" name="poll_seconds" min="60" max="86400" value="600" />
+            </label>
+            <div style="grid-column:1/-1;margin-top:0.5rem;padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.12);">
+              <h3 style="margin:0 0 0.35rem;font-size:1.05rem;">ZTP scripts repository</h3>
+              <p class="muted" style="margin:0 0 0.75rem;">
+                Required for Advanced mode. This repo holds <strong>vendor ZTP</strong> dispatch scripts
+                (<code>Ansible/ztp/…</code>) and <strong>bare-metal ZTP</strong> recipes/playbooks
+                (<code>Ansible/bare-metal-ztp/…</code>). It may be the same as the IaC repo or a dedicated ZTP repo.
+              </p>
+            </div>
+            <label>ZTP scripts repository <span class="muted">(org/name)</span>
+              <input type="text" id="advZtpRepo" name="ztp_repo" placeholder="acme/hayabusa-ztp" autocomplete="off" required />
+            </label>
+            <label>ZTP branch / ref <span class="muted">(optional)</span>
+              <input type="text" id="advZtpRef" name="ztp_ref" placeholder="defaults to IaC branch" />
+            </label>
+            <label>ZTP path prefix <span class="muted">(optional)</span>
+              <input type="text" id="advZtpPathPrefix" name="ztp_path_prefix" placeholder="leave empty if Ansible/ztp is at repo root" />
+            </label>
+            <label>Auth secret key <span class="muted">(vault)</span>
+              <input type="text" id="advAuthKey" name="auth_secret_key" value="gitops_github_pat" autocomplete="off" required />
+            </label>
+            <label>Personal access / deploy token
+              <input type="password" id="advAuthToken" name="auth_token" autocomplete="new-password" required />
+            </label>
+            <label>Webhook secret key <span class="muted">(vault)</span>
+              <input type="text" id="advWebhookKey" name="webhook_secret_key" value="gitops_webhook_secret" autocomplete="off" required />
+            </label>
+            <label>Webhook secret value
+              <input type="password" id="advWebhookSecret" name="webhook_secret" autocomplete="new-password" required />
+            </label>
+            <div class="form-actions" style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="button" class="btn btn-ghost" id="advancedBackBtn">Back to the fork</button>
+              <button type="submit" class="btn btn-primary" id="advancedSubmitBtn">Save &amp; finish</button>
+            </div>
+          </form>
+          <p class="section-desc setup-msg" id="advancedMsg" hidden></p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  {% include "_legal_footer.html" %}
+
+  <script src="/static/js/controller-csrf.js"></script>
+  <script src="/static/js/controller-liability-ack.js?v=20260914b"></script>
+  <script src="/static/js/setup.js?v=20260914b"></script>
+  {% include "_ecosystem_blade.html" %}
+</body>
+</html>

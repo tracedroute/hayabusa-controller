@@ -1,0 +1,77 @@
+{
+  "device_type": "switch",
+  "vendor": "cisco",
+  "config_template": "ios-xe-switch",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "cisco-switch-ztp",
+    "vlans": [
+      {
+        "id": 1,
+        "name": "default",
+        "state": "active"
+      },
+      {
+        "id": 10,
+        "name": "data",
+        "state": "active"
+      },
+      {
+        "id": 20,
+        "name": "voice",
+        "state": "active"
+      }
+    ],
+    "interfaces": [
+      {
+        "name": "GigabitEthernet1/0/1",
+        "switchport_mode": "access",
+        "access_vlan": 10,
+        "description": "Data Port 1"
+      },
+      {
+        "name": "GigabitEthernet1/0/2",
+        "switchport_mode": "access",
+        "access_vlan": 20,
+        "description": "Voice Port 1"
+      },
+      {
+        "name": "GigabitEthernet1/0/24",
+        "switchport_mode": "trunk",
+        "native_vlan": 1,
+        "allowed_vlans": "1,10,20",
+        "description": "Uplink Trunk"
+      }
+    ],
+    "svi": [
+      {
+        "interface": "Vlan10",
+        "ip": "192.168.10.1",
+        "netmask": "255.255.255.0",
+        "description": "Data VLAN Interface"
+      },
+      {
+        "interface": "Vlan20",
+        "ip": "192.168.20.1",
+        "netmask": "255.255.255.0",
+        "description": "Voice VLAN Interface"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "port": 22,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": ["8.8.8.8", "1.1.1.1"]
+      },
+      "spanning_tree": {
+        "enabled": true,
+        "mode": "rapid-pvst"
+      }
+    }
+  }
+}

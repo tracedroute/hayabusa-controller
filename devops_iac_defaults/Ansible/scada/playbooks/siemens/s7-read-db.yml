@@ -1,0 +1,28 @@
+---
+- name: Siemens S7 — read data block bytes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: siemens_s7
+      host: "{{ plc_host }}"
+      port: "{{ siemens_port | int }}"
+      rack: "{{ siemens_rack | int }}"
+      slot: "{{ siemens_slot | int }}"
+      db_number: "{{ siemens_db_number | int }}"
+      address: "{{ siemens_db_start | int }}"
+      count: "{{ siemens_db_size | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read DB over ISO-on-TCP (snap7)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: s7_read
+      changed_when: false
+
+    - name: Show DB bytes
+      ansible.builtin.debug:
+        msg: "{{ s7_read.stdout | from_json }}"

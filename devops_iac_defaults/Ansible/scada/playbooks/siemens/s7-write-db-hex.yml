@@ -1,0 +1,35 @@
+---
+- name: Siemens S7 — write DB bytes (hex payload)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    s7_write_hex: "0001"
+    plc_payload:
+      protocol: siemens_s7
+      host: "{{ plc_host }}"
+      port: "{{ siemens_port | int }}"
+      rack: "{{ siemens_rack | int }}"
+      slot: "{{ siemens_slot | int }}"
+      db_number: "{{ siemens_db_number | int }}"
+      address: "{{ siemens_db_start | int }}"
+      hex: "{{ s7_write_hex }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_s7_write=true and enable plc_writes_enabled in Hayabusa operator policy.
+      when: not (allow_s7_write | default(false) | bool)
+
+    - name: Write DB bytes
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: s7_write
+      changed_when: true
+
+    - name: Show write result
+      ansible.builtin.debug:
+        msg: "{{ s7_write.stdout | from_json }}"

@@ -1,0 +1,76 @@
+---
+- name: Mitsubishi — MC write/read verify (Type3E)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mitsubishi_verify_address: "{{ mitsubishi_verify_address | default('D10') }}"
+    mitsubishi_verify_write_value: "{{ mitsubishi_verify_write_value | default(4321) }}"
+    mc_read_payload:
+      protocol: mitsubishi_mc
+      host: "{{ plc_host }}"
+      port: "{{ mitsubishi_port | int }}"
+      device: "{{ mitsubishi_verify_address }}"
+      count: 1
+      timeout: "{{ plc_timeout | float }}"
+    mc_write_payload:
+      protocol: mitsubishi_mc
+      host: "{{ plc_host }}"
+      port: "{{ mitsubishi_port | int }}"
+      device: "{{ mitsubishi_verify_address }}"
+      values: ["{{ mitsubishi_verify_write_value | int }}"]
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_mitsubishi_write=true for MC write verification.
+      when: not (allow_mitsubishi_write | default(false) | bool)
+
+    - name: Read word before write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MC_READ
+      environment:
+        MC_READ: "{{ mc_read_payload | to_json }}"
+      register: mc_before
+      changed_when: false
+
+    - name: Write MC word
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env MC_WRITE
+      environment:
+        MC_WRITE: "{{ mc_write_payload | to_json }}"
+      register: mc_write
+      changed_when: true
+
+    - name: Read word after write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MC_READ
+      environment:
+        MC_READ: "{{ mc_read_payload | to_json }}"
+      register: mc_after
+      changed_when: false
+
+    - name: Parse MC results
+      ansible.builtin.set_fact:
+        mc_before_result: "{{ mc_before.stdout | from_json }}"
+        mc_write_result: "{{ mc_write.stdout | from_json }}"
+        mc_after_result: "{{ mc_after.stdout | from_json }}"
+
+    - name: Assert MC write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - mc_write_result.success | bool
+          - mc_after_result.success | bool
+          - mc_after_result.result['values'][0] == (mitsubishi_verify_write_value | int)
+        fail_msg: >-
+          MC verify failed at {{ mitsubishi_verify_address }}.
+          before={{ mc_before_result }} write={{ mc_write_result }} after={{ mc_after_result }}
+
+    - name: Show MC round-trip
+      ansible.builtin.debug:
+        msg:
+          device: "{{ mitsubishi_verify_address }}"
+          before: "{{ mc_before_result.result['values'][0] }}"
+          written: "{{ mitsubishi_verify_write_value }}"
+          after: "{{ mc_after_result.result['values'][0] }}"

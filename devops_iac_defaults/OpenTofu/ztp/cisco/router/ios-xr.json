@@ -1,0 +1,29 @@
+{
+  "device_type": "router",
+  "vendor": "cisco",
+  "config_template": "ios-xr",
+  "configuration": {
+    "hostname": "cisco-router-ztp",
+    "interfaces": [
+      {
+        "name": "MgmtEth0/RP0/CPU0/0",
+        "ip": "dhcp",
+        "description": "Management - ZTP"
+      }
+    ],
+    "static_routes": [],
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

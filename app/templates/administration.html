@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Administration · Hayabusa Controller</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/controller.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" />
+</head>
+<body class="app-shell admin-shell" data-page="administration">
+  <header class="app-nav">
+    <div class="app-brand">
+      <p class="app-brand-mark">Administration</p>
+      <p class="app-brand-sub" id="adminNavSub">{{ user.email or user.username }}</p>
+      <p class="app-brand-gitops" id="gitopsNavHint"{% if not gitops_enabled %} hidden{% endif %}>{% if gitops_enabled %}Connected to {{ gitops_provider_label }}{% if gitops_nav_url %} · <a href="{{ gitops_nav_url }}" target="_blank" rel="noopener noreferrer">{{ gitops_nav_url }}</a>{% endif %}{% endif %}</p>
+    </div>
+    <div class="app-nav-actions">
+      <a class="btn btn-ghost" href="/">Controller</a>
+      <a class="btn btn-ghost" href="/image-nest">Image Nest</a>
+      <a class="btn btn-ghost" href="/devops-iac">Workspace</a>
+      <a class="btn btn-ghost" href="/static/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener noreferrer" title="Open source and third-party notices">Notices</a>
+      <a class="btn btn-secondary" href="{{ hayabusa_public_url }}" target="_blank" rel="noopener">Open Hayabusa</a>
+      <a class="btn btn-primary" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <main class="app-main admin-main">
+    <section class="admin-hero">
+      <div>
+        <p class="admin-kicker">Owner console</p>
+        <h1>Role hierarchy &amp; site control</h1>
+        <p class="hero-lead" id="rbacMe">Loading your authority…</p>
+      </div>
+      <div class="admin-hero-actions">
+        <button type="button" class="btn btn-secondary" id="rbacRefreshBtn">Refresh</button>
+        <button type="button" class="btn btn-primary" id="adminNewRoleBtn">New role</button>
+      </div>
+    </section>
+
+    <div class="admin-layout">
+      <nav class="admin-rail" aria-label="Administration sections">
+        <button type="button" class="admin-rail-btn is-active" data-admin-section="hierarchy">Hierarchy</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="people">People</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="signin">Sign-in</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="mesh">Mesh</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="ztp">ZTP &amp; DHCP</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="ownership">Ownership</button>
+        <button type="button" class="admin-rail-btn" data-admin-section="site">Site</button>
+      </nav>
+
+      <div class="admin-stage">
+        <!-- HIERARCHY -->
+        <section class="admin-section is-active" data-admin-panel="hierarchy" id="rbacRolesSection">
+          <div class="admin-section-head">
+            <div>
+              <h2>Role ladder</h2>
+              <p class="section-desc">
+                Drag roles to reorder. Higher is more powerful. Save when the ladder looks right.
+                You can only move roles below your rank.
+              </p>
+              <p class="section-desc admin-note" id="rbacHierarchyNote"></p>
+            </div>
+            <div class="admin-save-bar" id="hierarchySaveBar" hidden>
+              <span class="admin-dirty-pill" id="hierarchyDirtyLabel">Unsaved order</span>
+              <button type="button" class="btn btn-ghost" id="hierarchyDiscardBtn">Discard</button>
+              <button type="button" class="btn btn-primary" id="hierarchySaveBtn">Save hierarchy</button>
+            </div>
+          </div>
+
+          <div class="hierarchy-board">
+            <div class="hierarchy-axis" aria-hidden="true">
+              <span>Highest</span>
+              <span>Lowest</span>
+            </div>
+            <ol class="hierarchy-list" id="rbacRolesList" aria-label="Role hierarchy">
+              <li class="hierarchy-empty">Loading roles…</li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- PEOPLE -->
+        <section class="admin-section" data-admin-panel="people" id="rbacUsersSection" hidden>
+          <article class="admin-card">
+            <div class="admin-card-head admin-card-head-row">
+              <h2>Users</h2>
+              <label class="admin-sort">
+                Sort
+                <select id="rbacUsersSort">
+                  <option value="activity">Recent activity</option>
+                  <option value="joined">Time joined</option>
+                  <option value="provider">Login method</option>
+                  <option value="team">Team</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
+            </div>
+            <p class="section-desc" id="rbacUserFormHint" hidden></p>
+            <ul class="admin-user-list" id="rbacUsersList"><li class="empty">Loading…</li></ul>
+            <form id="rbacUserForm" class="admin-inline-form" hidden>
+              <input name="username" placeholder="username" required />
+              <input name="email" placeholder="email" />
+              <select name="role" id="rbacUserRoleSelect">
+                <option value="viewer">viewer</option>
+              </select>
+              <button class="btn btn-secondary" type="submit">Add user</button>
+            </form>
+          </article>
+          <article class="admin-card" style="margin-top:1rem;">
+            <div class="admin-card-head">
+              <h2>Teams</h2>
+            </div>
+            <ul class="admin-entity-list" id="rbacTeamsList"><li class="empty">Loading…</li></ul>
+            <form id="rbacTeamForm" class="admin-inline-form">
+              <input name="name" placeholder="team name" required />
+              <button class="btn btn-secondary" type="submit">Create team</button>
+            </form>
+          </article>
+        </section>
+
+        <!-- SIGN-IN ALLOWLIST (default deny) -->
+        <section class="admin-section" data-admin-panel="signin" hidden>
+          <article class="admin-card">
+            <div class="admin-card-head admin-card-head-row">
+              <div>
+                <h2>Local password login</h2>
+                <p class="section-desc">
+                  First-boot break-glass uses username <code>admin</code> and the
+                  generated password. Owner/admin can disable it after another
+                  allowlisted sign-in method works.
+                </p>
+                <p class="section-desc admin-note" id="localPasswordMeta">Loading…</p>
+              </div>
+            </div>
+            <label class="admin-toggle-row" id="localPasswordToggleRow">
+              <input type="checkbox" id="localPasswordEnabledChk" />
+              <span>
+                <strong>Allow local password sign-in</strong>
+                <small class="section-desc" style="display:block;margin-top:0.25rem;">
+                  When off, the login wheel will not accept the hub manual password.
+                  First-launch password is one-time and is burned after use.
+                </small>
+              </span>
+            </label>
+            <div class="row" style="margin-top:0.75rem;gap:0.5rem;align-items:center;">
+              <button type="button" class="btn btn-primary" id="localPasswordSaveBtn">Save password login setting</button>
+              <span class="section-desc" id="localPasswordStatus"></span>
+            </div>
+            <label class="admin-toggle-row" id="require2faToggleRow" style="margin-top:1.25rem;">
+              <input type="checkbox" id="require2faChk" />
+              <span>
+                <strong>Require 2FA for GitHub / Google / Discord sign-ins</strong>
+                <small class="section-desc" style="display:block;margin-top:0.25rem;">
+                  Applies to allowlisted accounts after the first Owner is claimed.
+                  The first admin claim always requires 2FA regardless of this toggle.
+                </small>
+              </span>
+            </label>
+            <div class="row" style="margin-top:0.75rem;gap:0.5rem;align-items:center;">
+              <button type="button" class="btn btn-primary" id="require2faSaveBtn">Save 2FA requirement</button>
+              <span class="section-desc" id="require2faStatus"></span>
+            </div>
+            <p class="section-desc admin-note" id="require2faMeta" style="margin-top:0.5rem;"></p>
+          </article>
+          <article class="admin-card" style="margin-top:1rem;">
+            <div class="admin-card-head admin-card-head-row">
+              <div>
+                <h2>Sign-in allowlist</h2>
+                <p class="section-desc">
+                  Default deny: nobody can sign in via a platform until you whitelist
+                  their email, username, or OAuth user id for that platform.
+                </p>
+                <p class="section-desc admin-note" id="signinAllowlistMeta"></p>
+              </div>
+              <button type="button" class="btn btn-primary" id="signinAllowlistSaveBtn">Save allowlist</button>
+            </div>
+            <div id="signinAllowlistPlatforms" class="signin-allowlist-grid">
+              <p class="section-desc">Loading…</p>
+            </div>
+            <p class="section-desc" id="signinAllowlistStatus" style="margin-top:0.75rem;"></p>
+          </article>
+        </section>
+
+        </section>
+
+        <!-- MESH / TAILSCALE (Owner-admin: enter key + connect in UI) -->
+        <section class="admin-section" data-admin-panel="mesh" hidden>
+          <article class="admin-card">
+            <div class="admin-card-head admin-card-head-row">
+              <div>
+                <h2>Hayabusa mesh (Tailscale / Headscale)</h2>
+                <p class="section-desc">
+                  Owner/admin only. This Windows build ships an open-source mesh
+                  client (userspace Tailscale-compatible binary, no admin driver).
+                  Fetch or paste your Hayabusa auth key, then Save &amp; connect.
+                  You do not need Tailscale Inc’s proprietary Windows installer.
+                </p>
+                <p class="section-desc admin-note" id="meshConnectMeta">Loading…</p>
+              </div>
+              <button type="button" class="btn btn-secondary" id="meshConnectRefreshBtn">Refresh</button>
+            </div>
+
+            <p class="section-desc" id="meshTailscaleStatusLine" style="margin-top:0.75rem;"></p>
+            <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin:0.35rem 0 1rem;">
+              <button type="button" class="btn btn-secondary" id="meshFetchKeyBtn">Get key from Hayabusa</button>
+            </div>
+
+            <div class="admin-form-grid">
+              <label class="field">
+                Login server (Headscale)
+                <input id="meshLoginServer" autocomplete="off" placeholder="https://hayabusa.tracedroute.net:8443" style="width:100%;" />
+              </label>
+              <label class="field">
+                Mesh hostname
+                <input id="meshHostname" autocomplete="off" placeholder="controller hostname" style="width:100%;" />
+              </label>
+              <label class="field" style="grid-column:1/-1;">
+                Auth key (preauth)
+                <div class="row" style="gap:0.4rem;align-items:center;">
+                  <input id="meshAuthKey" type="password" autocomplete="off" placeholder="Paste auth key from Hayabusa, or click Get key" style="flex:1;" />
+                  <button type="button" class="btn btn-ghost" id="meshAuthKeyRevealBtn">Show</button>
+                </div>
+                <small class="section-desc" style="display:block;margin-top:0.35rem;">
+                  Treat like a password. Paste a key from Hayabusa Core, or use
+                  <strong>Get key from Hayabusa</strong> to phone-home and fill it automatically.
+                </small>
+              </label>
+            </div>
+
+            <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin-top:1rem;align-items:center;">
+              <button type="button" class="btn btn-primary" id="meshConnectBtn">Save &amp; connect</button>
+              <span class="section-desc" id="meshConnectStatus"></span>
+            </div>
+
+            <div id="meshWindowsBlock" hidden style="margin-top:1.25rem;">
+              <details>
+                <summary class="section-desc" style="cursor:pointer;">Advanced: PowerShell (optional)</summary>
+                <p class="section-desc" style="margin:0.5rem 0;">
+                  Only needed if Save &amp; connect cannot reach the local Tailscale CLI.
+                </p>
+                <label class="field">
+                  <textarea id="meshWindowsCommands" readonly rows="4" style="width:100%;font-family:ui-monospace,monospace;font-size:0.78rem;"></textarea>
+                </label>
+                <div class="row" style="gap:0.4rem;margin-top:0.4rem;">
+                  <button type="button" class="btn btn-ghost" data-copy-from="meshWindowsCommands">Copy commands</button>
+                </div>
+              </details>
+            </div>
+
+            <div id="meshLinuxHint" hidden style="margin-top:1rem;">
+              <p class="section-desc">
+                This host is not Windows — mesh usually joins via the appliance daemon after enroll.
+                You can still fetch/paste a key and use Save &amp; connect for recovery.
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <!-- ZTP / DHCP -->
+        <section class="admin-section" data-admin-panel="ztp" hidden>
+          <article class="admin-card">
+            <div class="admin-card-head admin-card-head-row">
+              <div>
+                <h2>Site ZTP &amp; DHCP</h2>
+                <p class="section-desc">
+                  Hand out LAN addresses and serve Zero Touch Provisioning on this site.
+                  Turning this on starts the local DHCP service (UDP 67 — may need Run as administrator on Windows).
+                </p>
+              </div>
+              <button type="button" class="btn btn-secondary" id="adminZtpRefreshBtn">Refresh</button>
+            </div>
+
+            <p class="section-desc" id="adminZtpStatusLine" style="margin-top:0.85rem;">Loading…</p>
+
+            <div class="row" style="margin-top:1rem;gap:0.85rem;align-items:center;flex-wrap:wrap;">
+              <label class="check ztp-master-switch" style="margin:0;">
+                <input type="checkbox" id="adminZtpEnableSwitch" />
+                <span>Enable ZTP / DHCP on site LAN</span>
+              </label>
+            </div>
+            <p class="section-desc" id="adminZtpPermNote" style="margin-top:0.65rem;"></p>
+            <p class="form-error" id="adminZtpError" hidden style="margin-top:0.65rem;"></p>
+
+            <p class="section-desc" style="margin-top:1.1rem;">
+              Subnet, interface, PXE/TFTP, and leases are configured on the dashboard
+              <strong>ZTP &amp; DHCP</strong> tab.
+              <a href="/#ztp">Open full ZTP settings</a>
+            </p>
+          </article>
+        </section>
+
+        <!-- OWNERSHIP -->
+        <section class="admin-section" data-admin-panel="ownership" hidden>
+          <article class="admin-card">
+            <div class="admin-card-head">
+              <h2>Playbook ownership</h2>
+              <p class="section-desc">Map a workspace path to a user or team.</p>
+            </div>
+            <form id="rbacOwnerForm" class="admin-inline-form">
+              <input name="path" placeholder="Ansible/playbooks/site.yml" required style="min-width:220px;flex:1;" />
+              <select name="owner_type"><option value="user">user</option><option value="team">team</option></select>
+              <input name="owner_id" placeholder="user key or team id" required />
+              <button class="btn btn-secondary" type="submit">Set owner</button>
+            </form>
+            <ul class="admin-entity-list" id="rbacOwnersList" style="margin-top:1rem;"><li class="empty">Loading…</li></ul>
+          </article>
+        </section>
+
+        <!-- SITE -->
+        <section class="admin-section" data-admin-panel="site" hidden>
+          <div class="admin-grid-2">
+            <article class="admin-card">
+              <div class="admin-card-head">
+                <h2>Site name</h2>
+                <p class="section-desc">Shown on Hayabusa in the controller branch picker.</p>
+              </div>
+              <form id="siteNameForm" class="admin-inline-form" hidden>
+                <label class="field" style="flex:1;min-width:220px;">
+                  Controller name
+                  <input name="display_name" id="siteNameInput" maxlength="80" placeholder="e.g. Boston DC · hayabusa-controller#2" autocomplete="off" />
+                </label>
+                <button class="btn btn-primary" type="submit">Save name</button>
+              </form>
+              <p class="section-desc" id="siteNameReadonly" hidden>Current name: <strong id="siteNameDisplay">—</strong></p>
+              <p class="section-desc" id="siteNameStatus" style="margin-top:0.5rem;"></p>
+            </article>
+            <article class="admin-card" id="setupRedoSection" hidden>
+              <div class="admin-card-head">
+                <h2>Controller setup</h2>
+                <p class="section-desc">Re-run Novice / Advanced. Users, secrets, and playbooks are kept.</p>
+              </div>
+              <p class="section-desc" id="setupStatusLine">Loading setup status…</p>
+              <div class="row" style="margin-top:0.9rem;gap:0.5rem;">
+                <button type="button" class="btn btn-secondary" id="setupRedoBtn">Redo setup</button>
+              </div>
+              <p class="section-desc" id="setupRedoStatus" style="margin-top:0.6rem;"></p>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  {% include "_legal_footer.html" %}
+
+  <!-- Role editor drawer -->
+  <aside class="admin-drawer" id="roleDrawer" hidden aria-hidden="true">
+    <div class="admin-drawer-backdrop" id="roleDrawerBackdrop"></div>
+    <div class="admin-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="roleDrawerTitle">
+      <div class="admin-drawer-head">
+        <div>
+          <p class="admin-kicker" id="roleDrawerKicker">Role</p>
+          <h2 id="roleDrawerTitle">Edit role</h2>
+        </div>
+        <button type="button" class="btn btn-ghost" id="roleDrawerClose">Close</button>
+      </div>
+      <form id="rbacRoleForm" class="rbac-role-form admin-drawer-body">
+        <div class="admin-form-grid">
+          <label class="field">
+            Role id
+            <input name="name" id="rbacRoleName" placeholder="site_tech" required pattern="[a-z][a-z0-9_]{1,31}" />
+          </label>
+          <label class="field">
+            Display label
+            <input name="label" id="rbacRoleLabel" placeholder="Site Tech" />
+          </label>
+          <label class="field">
+            Rank
+            <input name="rank" id="rbacRoleRank" type="number" min="0" max="99" value="10" />
+          </label>
+        </div>
+        <p class="section-desc" style="margin:0.35rem 0 0.9rem;">Prefer drag-and-drop on the ladder to set order; rank here is a fine-tune.</p>
+        <fieldset class="admin-perm-fieldset">
+          <legend>Permissions</legend>
+          <div id="rbacPermChecks" class="rbac-perm-grid admin-perm-grid"></div>
+        </fieldset>
+        <input type="hidden" id="rbacRoleEditId" value="" />
+        <div class="admin-drawer-actions">
+          <button class="btn btn-ghost" type="button" id="rbacRoleResetBtn" hidden>Cancel</button>
+          <button class="btn btn-primary" type="submit" id="rbacRoleSaveBtn">Create role</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+  <div class="admin-ctx-menu" id="adminUserCtxMenu" hidden role="menu"></div>
+  <script src="/static/js/controller-session-keepalive.js?v=20260808a"></script>
+  <script src="/static/js/controller-liability-ack.js?v=20260914b"></script>
+  <script src="/static/js/controller.js?v=20261001ztp2"></script>
+  {% include "_ecosystem_blade.html" %}
+</body>
+</html>

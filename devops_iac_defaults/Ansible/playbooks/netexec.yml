@@ -1,0 +1,59 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — NetExec
+# Password via controller vault placeholder (never store the value on Hayabusa).
+- name: "SECops — NetExec (nxc)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: "{{ secops_execute | default(false) }}"
+    secops_target: "{{ secops_target | default('', true) }}"
+    secops_protocol: "{{ secops_protocol | default('smb', true) }}"
+    secops_username: "{{ secops_username | default('', true) }}"
+    secops_password: "<<SECRET:lan_smb_password>>"
+    secops_timeout_sec: "{{ secops_timeout_sec | default(300) | int }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: nxc
+          protocol: "{{ secops_protocol }}"
+          target: "{{ secops_target | default('(unset)', true) }}"
+          execute: "{{ secops_execute }}"
+          creds: "password from controller vault key lan_smb_password when substituted"
+
+    - name: Locate nxc or netexec
+      ansible.builtin.shell: command -v nxc || command -v netexec || true
+      args:
+        executable: /bin/bash
+      register: which_tool
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "netexec={{ which_tool.stdout | trim | default('(not found)') }}"
+
+    - name: Require target and confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - secops_target | length > 0
+          - (which_tool.stdout | trim | length) > 0
+        fail_msg: "Need nxc/netexec, -e secops_target=…, -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Run NetExec
+      ansible.builtin.command:
+        argv: "{{ [which_tool.stdout | trim, secops_protocol, secops_target] + (['-u', secops_username, '-p', secops_password] if (secops_username | length > 0) else []) }}"
+      register: tool_out
+      changed_when: false
+      no_log: true
+      when: secops_execute | bool
+      async: "{{ secops_timeout_sec }}"
+      poll: 5
+
+    - name: Show output (redact locally if needed)
+      ansible.builtin.debug:
+        var: tool_out.stdout_lines
+      when: secops_execute | bool and tool_out is defined

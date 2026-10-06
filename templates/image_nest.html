@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Nest · Hayabusa Controller</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/controller.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+</head>
+<body class="app-shell" data-can-manage="{{ '1' if can_manage else '0' }}">
+  <header class="app-nav">
+    <div class="app-brand">
+      <p class="app-brand-mark">Image Nest</p>
+      <p class="app-brand-sub">
+        {{ user.username }}{% if user.email %} · {{ user.email }}{% endif %} · user-supplied ISO bank
+      </p>
+    </div>
+    <div class="app-nav-actions">
+      <a class="btn btn-ghost" href="/">Controller</a>
+      <a class="btn btn-secondary" href="/devops-iac">Workspace</a>
+      <a class="btn btn-primary" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="hero">
+      <h1>Image Nest</h1>
+      <p class="hero-lead">
+        Drop your own Windows ISO here. Hayabusa never distributes Microsoft media —
+        you supply the legal medium; this node catalogs dated images and optional strip/full bakes.
+      </p>
+    </section>
+
+    <div class="status-strip" aria-label="Disk and tools">
+      <article class="status-tile">
+        <p class="label">Free disk</p>
+        <p class="value" id="nestFreeDisk">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">Upload room</p>
+        <p class="value" id="nestUploadOk">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">wimlib</p>
+        <p class="value" id="nestToolWim">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">qemu-img</p>
+        <p class="value" id="nestToolQemu">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">virt-install</p>
+        <p class="value" id="nestToolVirt">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">Linux strip</p>
+        <p class="value" id="nestToolLinuxStrip">—</p>
+      </article>
+      <article class="status-tile">
+        <p class="label">rpm</p>
+        <p class="value" id="nestToolRpm">—</p>
+      </article>
+    </div>
+
+    <div class="panel-stack">
+      <section class="section section-wide">
+        <div class="section-head">
+          <div>
+            <h2>ISO drop zone</h2>
+            <p class="section-desc">Drag a Windows or Linux ISO (Win11/Server, Ubuntu, Rocky, Fedora, …). Files stay on this controller under <code>image-nest/iso-cache/</code>.</p>
+          </div>
+          <button type="button" class="btn btn-secondary" id="nestRefreshBtn">Refresh</button>
+        </div>
+
+        {% if can_manage %}
+        <div class="nest-drop" id="nestDrop" tabindex="0" role="button" aria-label="Drop Windows or Linux ISO here">
+          <input type="file" id="nestFileInput" accept=".iso,application/x-iso9660-image,application/octet-stream" hidden />
+          <p class="nest-drop-title">Drop an ISO here (Windows or Linux)</p>
+          <p class="nest-drop-sub">or click to choose a file · large uploads stream to disk</p>
+          <div class="nest-progress" id="nestProgress" hidden>
+            <div class="nest-progress-bar" id="nestProgressBar"></div>
+          </div>
+          <p class="muted" id="nestUploadStatus"></p>
+        </div>
+        {% else %}
+        <p class="section-desc">You can view the bank. Upload requires <code>manage_image_nest</code>.</p>
+        {% endif %}
+
+        <div class="nest-iso-pick" style="margin-top:1rem;">
+          <label class="field">
+            Uploaded ISO
+            <select id="nestIsoSelect">
+              <option value="">— upload an ISO first —</option>
+            </select>
+          </label>
+          {% if can_manage %}
+          <div class="nest-target-panel" id="nestTargetPanel">
+            <h3 class="nest-target-title">What are you building for?</h3>
+            <p class="nest-target-sub">Pick your deploy target, then select packages to remove. The banked <strong>file type</strong> depends on the target — bare metal outputs bootable <code>.iso</code> files; hypervisor Windows outputs <code>install.wim</code>.</p>
+            <div class="nest-target-cards" role="radiogroup" aria-label="Deploy target">
+              <button type="button" class="nest-target-card is-active" id="nestTargetBare" data-target="bare_metal" aria-pressed="true">
+                <span class="nest-target-card-kicker">ZTP · PXE · USB</span>
+                <span class="nest-target-card-name">Bare metal</span>
+                <span class="nest-target-card-desc">Banks a bootable <strong>ISO</strong> for install media. Hydrate with <code>&lt;&lt;IMAGE_NEST:latest-win11-bare-metal-stripped&gt;&gt;</code></span>
+              </button>
+              <button type="button" class="nest-target-card" id="nestTargetHyper" data-target="hypervisor" aria-pressed="false">
+                <span class="nest-target-card-kicker">OpenTofu · KVM · virt</span>
+                <span class="nest-target-card-name">Hypervisor</span>
+                <span class="nest-target-card-desc">Windows: banks <strong>install.wim</strong> (+ qcow2 stub). Linux: banks <strong>ISO</strong>. Hydrate with <code>&lt;&lt;IMAGE_NEST:latest-win11-stripped&gt;&gt;</code></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="nest-strip-panel" id="nestStripPanel">
+            <div class="nest-strip-toolbar">
+              <div class="nest-strip-toolbar-copy">
+                <h3 class="nest-strip-title">Packages on this ISO</h3>
+                <p class="nest-strip-sub">Every detected package is listed. Check what to remove before banking.</p>
+              </div>
+              <div class="nest-strip-badge" id="nestStripCount" aria-live="polite">—</div>
+            </div>
+            <div class="nest-strip-controls">
+              <label class="nest-strip-search-wrap">
+                <span class="sr-only">Filter packages</span>
+                <input type="search" id="nestStripSearch" class="nest-strip-search" placeholder="Filter by package name…" autocomplete="off" />
+              </label>
+              <div class="nest-strip-presets" id="nestStripPresets" role="group" aria-label="Strip presets"></div>
+              <div class="nest-strip-bulk">
+                <button type="button" class="btn btn-ghost btn-sm" id="nestStripAllBtn">Select all</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="nestStripNoneBtn">Clear all</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="nestStripDefaultsBtn">Recommended</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="nestStripRefreshBtn" title="Re-scan ISO packages">Rescan</button>
+              </div>
+            </div>
+            <div class="nest-strip-options" id="nestStripOptions">
+              <p class="nest-strip-empty">Select an ISO to inventory packages.</p>
+            </div>
+            <p class="nest-strip-foot muted">Recommended marks match the strip catalogs. Only packages present on this ISO can be removed.</p>
+            <div class="nest-cap-badge" id="nestCapBadge" role="status" hidden></div>
+          </div>
+
+          <div class="nest-artifact-hint" id="nestArtifactHint" role="status">
+            Select an ISO to see the output file type for your target.
+          </div>
+
+          <div class="nest-bank-actions row" style="margin-top:0.8rem;gap:0.6rem;flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary" id="nestStripBtn">Strip &amp; bank</button>
+            <button type="button" class="btn btn-secondary" id="nestFullBtn">Full bank</button>
+          </div>
+          <p class="section-desc" id="nestBankFoot" style="margin-top:0.6rem;">
+            Strip removes checked packages, then banks a dated artifact for your deploy target.
+          </p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="section section-wide">
+        <div class="section-head">
+          <div>
+            <h2>Image bank</h2>
+            <p class="section-desc">Saved operating systems — each row is either bare metal or hypervisor. Use the hydrate placeholder in OpenTofu/Ansible.</p>
+          </div>
+        </div>
+        <div class="nest-bank-filters" id="nestBankFilters" role="group" aria-label="Filter bank by target">
+          <button type="button" class="nest-filter-chip is-active" data-filter="all">All</button>
+          <button type="button" class="nest-filter-chip" data-filter="bare_metal">Bare metal</button>
+          <button type="button" class="nest-filter-chip" data-filter="hypervisor">Hypervisor</button>
+        </div>
+        <div class="nest-table-wrap">
+          <table class="nest-table" id="nestBankTable">
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>OS</th>
+                <th>Target</th>
+                <th>Artifact</th>
+                <th>Flavor</th>
+                <th>Created</th>
+                <th>Hydrate / details</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="nestBankBody">
+              <tr><td colspan="9" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section section-wide">
+        <div class="section-head">
+          <div>
+            <h2>Manifest viewer</h2>
+            <p class="section-desc">Base ISO vs deployed-image text trails (before / after).</p>
+          </div>
+        </div>
+        <pre class="nest-manifest" id="nestManifestView">(select View Manifest on a bank row)</pre>
+      </section>
+
+      <section class="section section-wide">
+        <div class="section-head">
+          <div>
+            <h2>Playbook registry</h2>
+            <p class="section-desc">
+              Stable refs for ZTP / Ansible / OpenTofu. On LAN approve, placeholders like
+              <code>&lt;&lt;IMAGE_NEST:latest-win11-stripped&gt;&gt;</code> hydrate into the job package
+              (same flow as <code>&lt;&lt;SECRET:…&gt;&gt;</code>). Files under
+              <code>image-nest/playbook-refs/</code> — controller does not run OpenTofu.
+            </p>
+          </div>
+        </div>
+        <pre class="nest-manifest" id="nestRegistryView">(loading registry…)</pre>
+      </section>
+
+      <section class="section section-wide" id="nestJobsSection">
+        <div class="section-head">
+          <div>
+            <h2>Recent bake jobs</h2>
+            <p class="section-desc">Background strip/full compilation on this appliance.</p>
+          </div>
+        </div>
+        <ul class="secret-list" id="nestJobsList">
+          <li class="empty">Loading…</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+  <script src="/static/js/image-nest.js"></script>
+</body>
+</html>

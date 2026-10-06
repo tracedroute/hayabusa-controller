@@ -1,0 +1,43 @@
+---
+- name: Rockwell / Allen-Bradley — read Logix tags (CIP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Read controller tags via selected CIP engine
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ playbook_dir }}/../scripts/logix_tags.py read
+          --engine {{ ab_cip_engine | default('pycomm3') }}
+          --host {{ plc_host }}
+          --path {{ ab_path | default(plc_host ~ '/0') }}
+          --timeout {{ plc_timeout | float }}
+          --tags {{ ab_tags }}
+      register: ab_read
+      changed_when: false
+
+    - name: Parse tag read result
+      ansible.builtin.set_fact:
+        ab_result: "{{ ab_read.stdout | from_json }}"
+
+    - name: Assert CIP tag read succeeded
+      ansible.builtin.assert:
+        that:
+          - ab_result.success | bool
+        fail_msg: "Logix tag read failed: {{ ab_result | default({}) }}"
+
+    - name: Assert every requested tag returned a value
+      ansible.builtin.assert:
+        that:
+          - item.error | default('') | length == 0
+          - item.value is not none
+        fail_msg: "Tag {{ item.tag }} missing or errored: {{ item }}"
+      loop: "{{ ab_result.result['values'] }}"
+      loop_control:
+        label: "{{ item.tag }}"
+
+    - name: Show tag values
+      ansible.builtin.debug:
+        msg:
+          engine: "{{ ab_result.result.engine }}"
+          values: "{{ ab_result.result['values'] }}"

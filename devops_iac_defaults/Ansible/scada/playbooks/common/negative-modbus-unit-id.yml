@@ -1,0 +1,42 @@
+---
+- name: Modbus TCP — negative test (closed port must fail)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    modbus_bad_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_bad_port | default(5029) | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      function_code: 3
+      address: 0
+      count: 1
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Attempt read against closed Modbus port
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env MODBUS_BAD
+      environment:
+        MODBUS_BAD: "{{ modbus_bad_payload | to_json }}"
+      register: modbus_bad_read
+      changed_when: false
+      failed_when: false
+
+    - name: Parse negative test result
+      ansible.builtin.set_fact:
+        modbus_bad_result: "{{ modbus_bad_read.stdout | from_json }}"
+
+    - name: Assert closed port rejected the request
+      ansible.builtin.assert:
+        that:
+          - not (modbus_bad_result.success | default(false) | bool)
+        fail_msg: >-
+          Negative Modbus test unexpectedly succeeded on port {{ modbus_bad_port | default(5029) }}:
+          {{ modbus_bad_result }}
+
+    - name: Show negative test outcome
+      ansible.builtin.debug:
+        msg:
+          port: "{{ modbus_bad_port | default(5029) }}"
+          error: "{{ modbus_bad_result.error | default('connection failed as expected') }}"

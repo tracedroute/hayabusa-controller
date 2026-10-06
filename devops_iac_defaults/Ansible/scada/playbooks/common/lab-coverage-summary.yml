@@ -1,0 +1,27 @@
+---
+- name: Lab coverage summary — persona and playbook matrix
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Show complete lab coverage matrix
+      ansible.builtin.debug:
+        msg:
+          suite_command: >-
+            docker exec peregrine11252025 bash
+            /peregrine/data/scada-plc-playbooks/scripts/run-lab-playbook-tests.sh
+          personas:
+            - schneider-m221 — Modbus read/write + negative port test
+            - modbuspal — automation register + write verify
+            - rockwell-modbus — CompactLogix gateway Modbus
+            - rockwell — CIP identity + cpppo tag read/write
+            - siemens — Snap7 DB + REST DataBlocks + S7 write verify
+            - beckhoff-ads — pyads ADS symbol read/write
+            - beckhoff — REST catalog/read + REST write verify + ADS negative test
+            - opcua — signed multi-node read + signed write verify
+            - mitsubishi — MC read/write
+            - omron — FINS read/write
+            - openplc-v4 — JWT 401 gate + login + diagnostics
+          hardware_only:
+            - OpenPLC v4 IEC program compile/run (Editor program.zip)
+            - Rockwell pycomm3 tag catalog (use ab_cip_engine=cpppo in lab)

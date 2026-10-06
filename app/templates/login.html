@@ -1,0 +1,2335 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <title>Sign in · Hayabusa Controller Node · Tracedroute</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <link href="https://fonts.googleapis.com/css2?family=Allura&family=Syncopate:wght@700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Allura + Syncopate + Poppins — SIL OFL 1.1 (Google Fonts); free for commercial web use */
+        /* Accipiter: Syncopate (ultra-wide sans) + skew ≈ Corvette-style automotive wordmark */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            height: 100%;
+            font-family: 'Poppins', sans-serif;
+            color: #fff;
+            overflow: hidden;
+        }
+        /* Full-screen background video stack (crossfade between clips) */
+        #video-bg-wrap {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            min-width: 100%;
+            min-height: 100%;
+            z-index: -1;
+            overflow: hidden;
+            background: #0a0a12;
+        }
+        .login-bg-video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center center;
+            will-change: opacity;
+            pointer-events: none;
+            transition: opacity 1.5s ease-in-out;
+        }
+        /* WWII group: edge-to-edge cover + explicit crossfade opacity */
+        #video-bg-wrap.login-bg--wwii {
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+        #video-bg-wrap.login-bg--wwii .login-bg-video {
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            min-width: 100%;
+            min-height: 100%;
+            object-fit: cover;
+            object-position: center center;
+            transition: opacity 1.5s ease-in-out;
+        }
+        .login-bg-video.is-back {
+            opacity: 0;
+            z-index: 0;
+        }
+        .login-bg-video.is-front {
+            opacity: 1;
+            z-index: 1;
+        }
+        /* Per-group telecom context — expands vertically under the button */
+        
+        .tr-support-contact {
+            position: fixed;
+            left: 12px;
+            bottom: 10px;
+            z-index: 8;
+            max-width: min(460px, calc(100vw - 24px));
+            padding: 0.45rem 0.65rem;
+            border-radius: 8px;
+            background: rgba(8, 12, 18, 0.72);
+            border: 1px solid rgba(255,255,255,0.18);
+            color: rgba(245,250,255,0.92);
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.72rem;
+            line-height: 1.35;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+        .tr-support-contact a {
+            color: #9ad4e0;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        @media (max-width: 640px) {
+            .tr-support-contact {
+                left: 8px;
+                bottom: 8px;
+                max-width: calc(100vw - 16px);
+            }
+        }
+
+        .telecom-relate {
+            position: fixed;
+            left: 50%;
+            bottom: 14px;
+            transform: translateX(-50%);
+            z-index: 8;
+            width: max-content;
+            max-width: min(420px, calc(100vw - 24px));
+            font-family: 'Poppins', sans-serif;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+        }
+        .telecom-relate-btn {
+            display: inline-block;
+            width: auto;
+            max-width: 100%;
+            margin: 0;
+            padding: 7px 11px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.55);
+            color: rgba(255, 255, 255, 0.95);
+            font: 500 0.72rem/1.35 'Poppins', sans-serif;
+            letter-spacing: 0.01em;
+            text-align: center;
+            cursor: pointer;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .telecom-relate-btn:hover,
+        .telecom-relate-btn:focus-visible {
+            background: rgba(0, 0, 0, 0.72);
+            border-color: rgba(255, 255, 255, 0.38);
+            outline: none;
+        }
+        .telecom-relate-panel {
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            margin-bottom: 0;
+            width: 100%;
+            transition: max-height 0.38s ease, opacity 0.28s ease, margin-bottom 0.28s ease;
+        }
+        .telecom-relate.is-open .telecom-relate-panel {
+            max-height: 480px;
+            opacity: 1;
+            margin-bottom: 8px;
+        }
+        .telecom-relate-box {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(0, 0, 0, 0.62);
+            color: rgba(255, 255, 255, 0.94);
+            font-size: 0.74rem;
+            font-weight: 400;
+            line-height: 1.45;
+            text-align: left;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+        .telecom-relate-box strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(186, 230, 253, 0.95);
+        }
+        @media (max-width: 640px) {
+            .telecom-relate {
+                bottom: 10px;
+                max-width: calc(100vw - 16px);
+            }
+            .telecom-relate-btn {
+                font-size: 0.68rem;
+                padding: 6px 9px;
+            }
+            .telecom-relate.is-open .telecom-relate-panel {
+                max-height: 520px;
+            }
+        }
+        /* Per-group media credits (videos + music) — bottom left, expands upward */
+        .media-credits {
+            position: fixed;
+            left: 12px;
+            bottom: 46px;
+            z-index: 8;
+            width: max-content;
+            max-width: min(460px, calc(100vw - 24px));
+            font-family: 'Poppins', sans-serif;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: flex-start;
+        }
+        .media-credits-btn {
+            display: inline-block;
+            margin: 0;
+            padding: 7px 11px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.55);
+            color: rgba(255, 255, 255, 0.95);
+            font: 500 0.72rem/1.35 'Poppins', sans-serif;
+            letter-spacing: 0.01em;
+            text-align: left;
+            cursor: pointer;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .media-credits-btn:hover,
+        .media-credits-btn:focus-visible {
+            background: rgba(0, 0, 0, 0.72);
+            border-color: rgba(255, 255, 255, 0.38);
+            outline: none;
+        }
+        .media-credits-panel {
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            margin-bottom: 0;
+            width: 100%;
+            transition: max-height 0.38s ease, opacity 0.28s ease, margin-bottom 0.28s ease;
+        }
+        .media-credits.is-open .media-credits-panel {
+            max-height: min(58vh, 520px);
+            opacity: 1;
+            margin-bottom: 8px;
+        }
+        .media-credits-box {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(0, 0, 0, 0.72);
+            color: rgba(255, 255, 255, 0.94);
+            font-size: 0.7rem;
+            line-height: 1.45;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            max-height: min(52vh, 460px);
+            overflow-y: auto;
+        }
+        .media-credits-box a {
+            color: #7dd3fc;
+            text-decoration: underline;
+        }
+        .media-credits-box .mc-section {
+            display: block;
+            margin: 10px 0 6px;
+            font-size: 0.66rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(186, 230, 253, 0.95);
+        }
+        .media-credits-box .mc-section:first-child {
+            margin-top: 0;
+        }
+        .media-credits-box ul {
+            margin: 0;
+            padding-left: 1.1rem;
+        }
+        .media-credits-box li {
+            margin: 0 0 8px;
+        }
+        .media-credits-box li:last-child {
+            margin-bottom: 0;
+        }
+        .media-credits-box .mc-mod {
+            display: block;
+            margin-top: 2px;
+            color: rgba(226, 232, 240, 0.82);
+            font-size: 0.64rem;
+        }
+        @media (max-width: 640px) {
+            .media-credits {
+                left: 8px;
+                bottom: 42px;
+                max-width: calc(100vw - 16px);
+            }
+            .media-credits.is-open .media-credits-panel {
+                max-height: min(50vh, 420px);
+            }
+        }
+        /* Hide WebKit’s inline media / PiP UI on background videos */
+        #video-bg-wrap video::-webkit-media-controls,
+        #video-bg-wrap video::-webkit-media-controls-start-playback-button,
+        #video-bg-wrap video::-webkit-media-controls-panel,
+        #video-bg-wrap video::-webkit-media-controls-enclosure {
+            display: none !important;
+        }
+        /* Opening-style credits — 9s between lines; finale (Hayabusa) stays on screen */
+        #login-credits {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .credit-slide {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            max-width: 92vw;
+            padding: 0 1.25rem;
+            text-align: center;
+            z-index: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.75s ease-in-out;
+        }
+        /* Intro slides — same type as finale “Hayabusa” line */
+        .credit-slide:not(.credit-slide--finale) {
+            font-family: "Allura", cursive;
+            font-size: clamp(2.85rem, 7vw, 4.75rem);
+            font-weight: 400;
+            line-height: 1.05;
+            color: #8af5ff;
+            text-shadow:
+                0 0 6px rgba(0, 220, 255, 0.85),
+                0 0 18px rgba(0, 180, 255, 0.55),
+                0 2px 6px rgba(0, 0, 0, 0.85);
+        }
+        .credit-slide--visible {
+            z-index: 2;
+            opacity: 1;
+        }
+        /* Finale: Hayabusa Controller Node lockup */
+        .credit-slide--finale {
+            top: 11%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1rem;
+            line-height: 1.2;
+            width: 100%;
+            max-width: 92vw;
+            text-align: center;
+        }
+        .credit-lockup {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            margin: 0 auto;
+            text-align: center;
+        }
+        .credit-lockup-product {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            font-family: "Syncopate", sans-serif;
+            font-size: clamp(1.65rem, 4.8vw, 3.35rem);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            line-height: 1.08;
+            color: #5ae8ff;
+            text-shadow:
+                0 0 4px #00b4ff,
+                0 0 12px rgba(0, 220, 255, 0.95),
+                0 0 24px rgba(0, 180, 255, 0.75),
+                0 0 42px rgba(0, 140, 255, 0.45),
+                0 2px 6px rgba(0, 0, 0, 0.85);
+        }
+        .credit-lockup-product .credit-lockup-line {
+            display: block;
+            width: 100%;
+            text-align: center;
+            transform: skewX(-12deg) scaleY(0.86);
+            transform-origin: center center;
+        }
+        .credit-lockup-trim {
+            display: block;
+            font-family: "Allura", cursive;
+            font-size: clamp(2.85rem, 7vw, 4.75rem);
+            font-weight: 400;
+            line-height: 1.05;
+            color: #8af5ff;
+            margin-top: 0.08em;
+            text-align: center;
+            text-shadow:
+                0 0 6px rgba(0, 220, 255, 0.85),
+                0 0 18px rgba(0, 180, 255, 0.55),
+                0 2px 6px rgba(0, 0, 0, 0.85);
+        }
+        .credit-lockup-tagline {
+            display: block;
+            font-family: "Allura", cursive;
+            font-size: clamp(1.1rem, 2.4vw, 1.55rem);
+            font-weight: 400;
+            letter-spacing: 0.06em;
+            color: rgba(138, 245, 255, 0.92);
+            margin-top: 0.55em;
+            text-align: center;
+        }
+        .login-orb {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            width: 64px;
+            height: 64px;
+            z-index: 6;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.45s ease, transform 0.45s ease;
+        }
+        .login-orb.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .login-orb.expanded {
+            width: 320px;
+            height: 320px;
+        }
+        .login-orb-center {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.45);
+            background: rgba(8, 12, 18, 0.9);
+            color: #fff;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            font-size: 12px;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            z-index: 4;
+        }
+        .login-orb-wheel {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.35);
+            transition: opacity 0.3s ease, transform 0.35s ease;
+            z-index: 2;
+        }
+        .login-orb.expanded .login-orb-wheel {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+        .donut-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
+        }
+        .donut-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 320px;
+            max-height: 320px;
+        }
+        .donut-svg {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.3));
+        }
+        .donut-section-group {
+            transform-origin: 400px 400px;
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+        }
+        .donut-segment {
+            cursor: pointer;
+            stroke: rgba(255, 255, 255, 0.4);
+            stroke-width: 3;
+            filter: brightness(1);
+            transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .donut-section-group:hover .donut-segment {
+            filter: brightness(1.4) drop-shadow(0 0 30px rgba(255, 255, 255, 0.5));
+            stroke: rgba(255, 255, 255, 0.9);
+            stroke-width: 4;
+        }
+        .donut-section-group[data-section="microsoft"]:hover { transform: scale(1.15) translate(8px, -14px); }
+        .donut-section-group[data-section="teams"]:hover { transform: scale(1.15) translate(8px, -14px); }
+        .donut-section-group[data-section="slack"]:hover { transform: scale(1.15) translate(16px, 0); }
+        .donut-section-group[data-section="discord"]:hover { transform: scale(1.15) translate(8px, 14px); }
+        .donut-section-group[data-section="google"]:hover { transform: scale(1.15) translate(-8px, 14px); }
+        .donut-section-group[data-section="github"]:hover { transform: scale(1.15) translate(-16px, 0); }
+        .donut-section-group[data-section="manual"]:hover { transform: scale(1.15) translate(-8px, -14px); }
+        .donut-label-group {
+            pointer-events: none;
+            user-select: none;
+        }
+        .donut-label-text {
+            pointer-events: none;
+            user-select: none;
+            fill: #ffffff;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            font-family: 'Poppins', sans-serif;
+            text-transform: uppercase;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+        .donut-center {
+            fill: rgba(0, 0, 0, 0.45);
+            stroke: rgba(255, 255, 255, 0.2);
+            stroke-width: 2;
+        }
+        .donut-outer-ring {
+            fill: transparent;
+            stroke: rgba(255, 255, 255, 0.2);
+            stroke-width: 2;
+        }
+        .manual-login-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(2px);
+        }
+        .manual-login-modal.open {
+            display: flex;
+        }
+        .manual-login-dialog {
+            width: min(92vw, 360px);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: 12px;
+            background: rgba(10, 15, 24, 0.92);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+            padding: 16px;
+        }
+        .manual-login-title {
+            margin: 0 0 10px 0;
+            color: #fff;
+            font-size: 14px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .manual-login-input {
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.07);
+            color: #fff;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        .manual-login-input + .manual-login-input {
+            margin-top: -4px;
+        }
+        .manual-login-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .manual-login-error {
+            color: #ffb4b4;
+            font-size: 12px;
+            margin: 0 0 10px 0;
+            min-height: 16px;
+        }
+        .manual-btn {
+            border: 0;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .manual-btn.cancel {
+            background: rgba(255, 255, 255, 0.14);
+            color: #fff;
+        }
+        .manual-btn.submit {
+            background: #6cb6ff;
+            color: #07131f;
+        }
+        .totp-step { display: none; }
+        .totp-step.active { display: block; }
+        .manual-step { display: none; }
+        .manual-step.active { display: block; }
+        .manual-chooser-btn {
+            width: 100%;
+            margin-bottom: 10px;
+            text-align: left;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .manual-chooser-btn:hover {
+            background: rgba(108, 182, 255, 0.18);
+            border-color: rgba(108, 182, 255, 0.45);
+        }
+        .manual-chooser-btn small {
+            display: block;
+            font-weight: 400;
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+        .totp-secret {
+            font-family: ui-monospace, monospace;
+            font-size: 12px;
+            letter-spacing: 0.06em;
+            word-break: break-all;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #cbd5e1;
+            margin-bottom: 10px;
+        }
+        .totp-note {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        .totp-reenroll { margin-top: 2px; }
+        .totp-link-btn {
+            background: none;
+            border: 0;
+            padding: 0 0 10px;
+            color: #93c5fd;
+            font-size: 11px;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .totp-link-btn:hover { color: #bfdbfe; }
+        .totp-qr-wrap {
+            display: flex;
+            justify-content: center;
+            margin: 8px 0 12px;
+            padding: 10px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        #googleTotpQr { line-height: 0; }
+        #googleTotpQr img { display: block; border-radius: 6px; }
+        .totp-manual-fallback {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-bottom: 10px;
+        }
+        .totp-manual-fallback summary { cursor: pointer; color: #cbd5e1; margin-bottom: 6px; }
+        @media (max-width: 640px) {
+            .login-bg-video {
+                object-fit: cover;
+                object-position: center center;
+                width: 100vw;
+                height: 100vh;
+            }
+            .login-orb {
+                right: 10px;
+                bottom: 10px;
+            }
+            .login-orb.expanded {
+                width: 260px;
+                height: 260px;
+            }
+            .donut-label-text { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <script>
+        (function () {
+            // Each visit/reload picks a random category group; within a visit clips loop that group.
+            // Pexels: https://www.pexels.com/video/ — https://www.pexels.com/license/  |  Pixabay: — https://pixabay.com/service/license/
+            // Groups C–E: Wikimedia Commons (trimmed). E = Why We Fight: War Comes to America.
+            const PLAYLIST_GROUPS = [
+                // Entry — Earth-from-orbit globe opener (own category)
+                [
+                    'peregrinevideoentry.mp4',
+                ],
+                // Nature — brand bird + landscape / sunrise
+                [
+                    'peregrine5-5.mp4',
+                    'pexels_4609780_hd_1280_720_24fps.mp4',
+                    'pixabay_cuba_sunrise_2109.mp4',
+                ],
+                [
+                    'pexels_ukraine_postwar_31498925.mp4',
+                    'pexels_california_wildfire_aftermath_30358461.mp4',
+                    'pexels_israel_urban_aftermath_34185485.mp4',
+                    'pexels_world_trade_center_memorial_15172439.mp4',
+                ],
+                // Hurricane Maria — Puerto Rico
+                [
+                    'maria_luquillo_drone_01m38-01m55.mp4',
+                    'maria_prng_response_00m42-00m51.mp4',
+                    'maria_arecibo_collapse_00m03-00m23.mp4',
+                    'maria_uscg_san_juan_00m14-00m20.mp4',
+                    'maria_jose_satellite_00m10-00m21.mp4',
+                ],
+                // Japan
+                [
+                    'japan_tsunami_kita_ibaraki_00m00-00m28.mp4',
+                    'japan_sendai_ambulances_00m08-00m16.mp4',
+                    'japan_floods_2018_00m46-01m04.mp4',
+                    'japan_tokyo_skytree_5s.mp4',
+                    'japan_ntt_strowger_full.mp4',
+                    'japan_hayabusa_reentry_00m15-00m45.mp4',
+                ],
+                // World War II
+                [
+                    'wwii_war_comes_33m41-34m50.mp4',
+                    'wwii_war_comes_39m12-40m18.mp4',
+                    'wwii_war_comes_43m32-44m31.mp4',
+                    'wwii_war_comes_49m14-51m14.mp4',
+                    'wwii_war_comes_51m48-52m28.mp4',
+                ],
+                // United States
+                [
+                    'USAIntro1.mp4',
+                ],
+            ];
+            const GROUP_TELECOM_RELATE = [
+                {
+                    title: 'Entry',
+                    body: 'This category is the Earth-from-orbit globe opener—a view of the planet as one continuous surface of continents, oceans, and atmosphere. Global telecommunications and networking are what make that whole visible as a living system: undersea fiber, satellite constellations, microwave and cellular backhaul, and internet exchanges that stitch regions into one fabric. From orbit, borders fade and the need for long-haul capacity, low-latency paths, and resilient routing becomes obvious. Software-defined infrastructure continues that story by letting operators provision, heal, and scale worldwide links in software instead of waiting on rigid, site-by-site hardware builds alone.'
+                },
+                {
+                    title: 'Nature',
+                    body: 'These clips open on wildlife and landscape light—including places such as Cuba—where infrastructure is still developing and connectivity is uneven. Reliable networking is how communities reach markets, schools, health care, and family abroad; it is also how operators provision capacity, extend last-mile access, and grow digital public services. For countries building out their networks, software-defined infrastructure makes it faster to stand up, scale, and manage links without waiting solely on rigid, site-by-site hardware builds.'
+                },
+                {
+                    title: 'Memorial & aftermath',
+                    body: 'This set shows California wildfire aftermath, postwar Ukraine, postwar Israel, and a World Trade Center memorial. In each case, communications shaped how incidents were managed: first responders coordinate on radio and data networks, public alerts move over cellular and broadcast, and families reconnect when links come back. After destruction, rebuilding fiber, towers, and exchanges is slow if every site is a one-off project. Software-defined infrastructure helps restore service faster by centralizing control, pushing configuration to the edge, and spinning up replacement paths and services as physical plant returns.'
+                },
+                {
+                    title: 'Hurricane Maria · Puerto Rico',
+                    body: 'This category follows Puerto Rico through Hurricane Maria: satellite imagery of the storm’s path, the Arecibo dish’s later collapse after hurricane damage and corrosion, National Guard and cleanup crews in relief work, and drone footage of a town on the island. Telecom and networking carried forecasts and warnings before landfall, then carried situational updates, agency coordination, and public information when power and roads failed. Relief depends on working voice and data between Guard units, coast and local responders, and residents. Software-defined infrastructure can shorten recovery by letting operators rebuild and re-route service in software as towers, backhaul, and sites come back online.'
+                },
+                {
+                    title: 'Japan',
+                    body: 'This montage ties Japan’s skyline and disasters to communications. Tokyo Skytree is a major broadcast and telecom tower—national television and radio, plus mobile and microwave links, radiating from one landmark. The NTT Strowger switch shows the electromechanical roots of the telephone network that later generations of digital switching replaced. In the 2018 floods, and after the 2011 Kita-Ibaraki tsunami, warnings, evacuation orders, and rebuild logistics all needed working networks; Sendai ambulances and emergency response depended on dispatch, radio, and data to reach survivors. Networking is how Japan informs people before a disaster and coordinates recovery afterward.'
+                },
+                {
+                    title: 'World War II',
+                    body: 'This footage from World War II shows how nations used telecommunications to cooperate with allies, speak to their own citizens, and run the home front. Radio, cable, and film networks carried news and propaganda, linked governments and commands, and helped recruit and mobilize military service at scale. Those wartime information systems—mass broadcast, long-haul signaling, and industrial electronics—are part of the lineage of modern telecom and networking.'
+                },
+                {
+                    title: 'United States',
+                    body: 'This category turns to the United States—landscapes, cities, and the networks that stitch them together. From coast-to-coast fiber and wireless backbones to public-safety radio, broadcast, and the internet exchanges that carry daily life, American infrastructure depends on resilient telecommunications. Software-defined infrastructure continues that story: operators can provision, heal, and scale links in software as communities grow and as storms, outages, and demand reshape the map.'
+                },
+            ];
+            /* Attribution for the active playlist group (CC BY / BY-SA / PD / stock). */
+            const GROUP_MEDIA_CREDITS = [
+                {
+                    label: 'Entry',
+                    videos: [
+                        {
+                            title: 'Hayabusa globe entry (peregrinevideoentry)',
+                            author: 'Tracedroute / Hayabusa',
+                            license: 'All rights reserved (original)',
+                            note: 'Clipchamp export used as the sign-in Entry category opener.',
+                            modified: false
+                        }
+                    ]
+                },
+                {
+                    label: 'Nature',
+                    videos: [
+                        {
+                            title: 'Hayabusa brand bird (peregrine5-5)',
+                            author: 'Tracedroute / Hayabusa',
+                            license: 'All rights reserved (original)',
+                            note: 'Clipchamp export; raptor close-up used as Nature brand B-roll.',
+                            modified: false
+                        },
+                        {
+                            title: 'Pexels video 4609780',
+                            author: 'Pexels contributor',
+                            license: 'Pexels License',
+                            licenseUrl: 'https://www.pexels.com/license/',
+                            sourceUrl: 'https://www.pexels.com/video/4609780/',
+                            modified: false
+                        },
+                        {
+                            title: 'Cuba sunrise (Pixabay 2109)',
+                            author: 'Pixabay contributor',
+                            license: 'Pixabay Content License',
+                            licenseUrl: 'https://pixabay.com/service/license-summary/',
+                            sourceUrl: 'https://pixabay.com/',
+                            modified: false
+                        }
+                    ]
+                },
+                {
+                    label: 'Memorial & aftermath',
+                    videos: [
+                        {
+                            title: 'Ukraine postwar (Pexels 31498925)',
+                            author: 'Pexels contributor',
+                            license: 'Pexels License',
+                            licenseUrl: 'https://www.pexels.com/license/',
+                            sourceUrl: 'https://www.pexels.com/video/31498925/',
+                            modified: false
+                        },
+                        {
+                            title: 'California wildfire aftermath (Pexels 30358461)',
+                            author: 'Pexels contributor',
+                            license: 'Pexels License',
+                            licenseUrl: 'https://www.pexels.com/license/',
+                            sourceUrl: 'https://www.pexels.com/video/30358461/',
+                            modified: false
+                        },
+                        {
+                            title: 'Israel urban aftermath (Pexels 34185485)',
+                            author: 'Pexels contributor',
+                            license: 'Pexels License',
+                            licenseUrl: 'https://www.pexels.com/license/',
+                            sourceUrl: 'https://www.pexels.com/video/34185485/',
+                            modified: false
+                        },
+                        {
+                            title: 'World Trade Center memorial (Pexels 15172439)',
+                            author: 'Pexels contributor',
+                            license: 'Pexels License',
+                            licenseUrl: 'https://www.pexels.com/license/',
+                            sourceUrl: 'https://www.pexels.com/video/15172439/',
+                            modified: false
+                        }
+                    ]
+                },
+                {
+                    label: 'Hurricane Maria · Puerto Rico',
+                    videos: [
+                        {
+                            title: 'Flying Drone around Luquillo, Puerto Rico',
+                            author: 'Que Pasa Isla',
+                            license: 'CC BY 3.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Flying_Drone_around_Luquillo,_Puerto_Rico.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Puerto Rico National Guard members respond after Hurricane Maria',
+                            author: 'NationalGuard',
+                            license: 'CC BY 3.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Puerto_Rico_National_Guard_members_respond_after_Hurricane_Maria.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Collapse of Arecibo Radio Telescope 01',
+                            author: 'Arecibo Observatory / U.S. National Science Foundation',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Collapse_of_Arecibo_Radio_Telescope_01.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Hurricane Maria at Coast Guard Sector San Juan',
+                            author: 'U.S. Coast Guard',
+                            license: 'Public domain (PD-USGov)',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Hurricane_Maria_at_Coast_Guard_Sector_San_Juan.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Satellite Animation Shows Hurricane Maria and Post Tropical Storm Jose',
+                            author: 'NASA',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Satellite_Animation_Shows_Hurricane_Maria_and_Post_Tropical_Storm_Jose.webm',
+                            modified: true
+                        }
+                    ]
+                },
+                {
+                    label: 'Japan',
+                    videos: [
+                        {
+                            title: 'Tsunami 20110311 Kita-Ibaraki Japan',
+                            author: 'Edomurasaki',
+                            license: 'CC BY 3.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tsunami_20110311_Kita-Ibaraki_Japan.ogv',
+                            modified: true
+                        },
+                        {
+                            title: 'Japanese ambulances in Sendai immediately after the 2011 earthquake off the Pacific coast of Tōhoku',
+                            author: 'お笑い集団ティーライズ',
+                            license: 'CC BY 3.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Japanese_ambulances_in_Sendai_immediately_after_the_2011_earthquake_off_the_Pacific_coast_of_T%C5%8Dhoku.ogv',
+                            modified: true
+                        },
+                        {
+                            title: '2018 Japan floods',
+                            author: 'melvil',
+                            license: 'CC BY-SA 4.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:2018_Japan_floods.webm',
+                            modified: true,
+                            shareAlike: true
+                        },
+                        {
+                            title: 'Tokyo Skytree from a distance',
+                            author: 'The Nature Box',
+                            license: 'CC BY-SA 4.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tokyo_Skytree_from_a_distance.webm',
+                            modified: true,
+                            shareAlike: true
+                        },
+                        {
+                            title: 'NTT strowger switch operation',
+                            author: 'Darklanlan',
+                            license: 'CC BY 4.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:NTT_strowger_switch_operation.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'NASA team captures Hayabusa spacecraft reentry',
+                            author: 'NASA TV',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:NASA_team_captures_Hayabusa_spacecraft_reentry.ogv',
+                            modified: true
+                        }
+                    ]
+                },
+                {
+                    label: 'World War II',
+                    videos: [
+                        {
+                            title: 'Why We Fight: War Comes to America (selected segments)',
+                            author: 'U.S. National Archives',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Why_We_Fight-_War_Comes_to_America.webm',
+                            modified: true,
+                            note: 'Film soundtrack from this public-domain source is used for this group.'
+                        }
+                    ]
+                },
+                {
+                    label: 'United States',
+                    videos: [
+                        {
+                            title: 'TrumpDanceCroppedShortened',
+                            author: 'Margo Martin / The White House',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:TrumpDanceCroppedShortened.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Trump Dance with the Navy Sailors',
+                            author: 'Margo Martin / The White House',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Trump_Dance_with_the_Navy_Sailors.webm',
+                            modified: true
+                        },
+                        {
+                            title: "President Trump dances at the McDonald's Impact Summit (November 18, 2025)",
+                            author: 'The White House',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:President_Trump_dances_at_the_McDonald%27s_Impact_Summit_(November_18,_2025).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Dance for Obama - Boston (FINAL CUT)',
+                            author: 'Kent Thompson',
+                            license: 'CC BY 3.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Dance_for_Obama_-_Boston_(FINAL_CUT).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Tango Dancing at the Ambassadors Reception',
+                            author: 'The White House',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Tango_Dancing_at_the_Ambassadors_Reception.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'The First Family Takes in a Baseball Game in Havana, Cuba',
+                            author: 'The White House',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:The_First_Family_Takes_in_a_Baseball_Game_in_Havana,_Cuba.webm',
+                            modified: true
+                        },
+                        {
+                            title: "President Clinton's Internet Address - July 2000",
+                            author: 'William J. Clinton Presidential Library (clintonlibrary42)',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:President_Clinton%27s_Internet_Address_-_July_2000.webm',
+                            modified: true
+                        },
+                        {
+                            title: 'President Clinton at Channel One Web Chat (2000)',
+                            author: 'William J. Clinton Presidential Library (clintonlibrary42)',
+                            license: 'Public domain',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:President_Clinton_at_Channel_One_Web_Chat_(2000).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Starlink 6-100 Launches from Cape Canaveral Space Force Station (993274)',
+                            author: 'U.S. Space Force / Gwendolyn Kurzen',
+                            license: 'Public domain (PD-USGov)',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Starlink_6-100_Launches_from_Cape_Canaveral_Space_Force_Station_(993274).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Starlink 12-16 (955578)',
+                            author: 'U.S. Space Force / Robert Mason',
+                            license: 'Public domain (PD-USGov)',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Starlink_12-16_(955578).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Starlink 6-79 mission launches from CCSFS (989101)',
+                            author: 'U.S. Space Force / Spencer Contreras',
+                            license: 'Public domain (PD-USGov)',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Starlink_6-79_mission_launches_from_CCSFS_(989101).webm',
+                            modified: true
+                        },
+                        {
+                            title: 'Starlink 6 satellites',
+                            author: 'Jud McCranie',
+                            license: 'CC BY-SA 4.0',
+                            licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+                            sourceUrl: 'https://commons.wikimedia.org/wiki/File:Starlink_6_satellites.webm',
+                            modified: true,
+                            shareAlike: true
+                        }
+                    ]
+                }
+            ];
+            const MUSIC_CREDIT = {
+                title: 'Miami Nights – Extended Theme',
+                author: 'Kevin MacLeod',
+                authorUrl: 'https://incompetech.com/',
+                license: 'CC BY 4.0',
+                licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+                note: 'Used as background music for groups that are not World War II or United States.'
+            };
+            const BASE = "/static/videos/";
+            var SS_GROUP_KEY = 'peregrineLoginBgGroup';
+            var SS_KEY = 'peregrineLoginBgStart';
+            var nGroups = PLAYLIST_GROUPS.length;
+            var prevGroup = parseInt(sessionStorage.getItem(SS_GROUP_KEY) || '-1', 10);
+            if (isNaN(prevGroup) || prevGroup < 0 || prevGroup >= nGroups) {
+                prevGroup = -1;
+            }
+            /* Fresh random category each visit/reload; videos stay in their groups. */
+            var groupIdx = Math.floor(Math.random() * nGroups);
+            if (nGroups > 1 && groupIdx === prevGroup) {
+                groupIdx = (groupIdx + 1 + Math.floor(Math.random() * (nGroups - 1))) % nGroups;
+            }
+            sessionStorage.setItem(SS_GROUP_KEY, String(groupIdx));
+            var PLAYLIST = PLAYLIST_GROUPS[groupIdx];
+            var L = PLAYLIST.length;
+            /* Always start at the first clip in the chosen category. */
+            var startIdx = 0;
+            sessionStorage.setItem(SS_KEY, String(startIdx));
+            var order = PLAYLIST.map(function (_, i) {
+                return PLAYLIST[(startIdx + i) % L];
+            });
+            /* World War II / United States: play film soundtrack; mute Miami Nights theme */
+            var useVideoAudio = PLAYLIST.some(function (f) {
+                var n = String(f);
+                return n.indexOf('wwii_') === 0 || n === 'USAIntro1.mp4';
+            });
+            window.__peregrineLoginUseVideoAudio = useVideoAudio;
+            var pos = 0;
+            var front = 0;
+            var layers = [];
+            var CROSSFADE_MS = 1500;
+            var FADE_LEAD_SEC = 1.65;
+            var transitionPending = false;
+            /* WWII clips are long — always start the opacity fade a full CROSSFADE early */
+            if (useVideoAudio) {
+                FADE_LEAD_SEC = CROSSFADE_MS / 1000;
+            }
+            var CREDITS_START_DELAY_MS = 0;
+            var CREDITS_INTERVAL_MS = 9000;
+            /* Must match .credit-slide transition duration (fade out, then fade in next) */
+            var CREDIT_FADE_MS = 750;
+            var creditRotateTimer = null;
+            var creditFadeInTimer = null;
+            var creditIdx = 0;
+
+            function applyPlaybackRate(el) {
+                if (!el || !el.src) { return; }
+                var name = (el.src.split('?')[0].split('/').pop() || '');
+                el.playbackRate = (name === 'pexels_4609780_hd_1280_720_24fps.mp4' || name === 'pixabay_cuba_sunrise_2109.mp4') ? 0.5 : 1.0;
+            }
+
+            function syncWelcomeMusic() {
+                var a = document.getElementById('welcome-music');
+                if (!useVideoAudio) { return; }
+                if (a) {
+                    try { a.pause(); } catch (e) {}
+                    a.muted = true;
+                    a.volume = 0;
+                    a.removeAttribute('autoplay');
+                }
+            }
+
+            function appendCreditLink(parent, href, text) {
+                var a = document.createElement('a');
+                a.href = href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer license';
+                a.textContent = text;
+                parent.appendChild(a);
+            }
+
+            function renderMediaCredits() {
+                var list = document.getElementById('media-credits-videos');
+                var musicEl = document.getElementById('media-credits-music');
+                var groupEl = document.getElementById('media-credits-group');
+                if (!list || !musicEl || !groupEl) { return; }
+                var pack = GROUP_MEDIA_CREDITS[groupIdx] || GROUP_MEDIA_CREDITS[0];
+                groupEl.textContent = 'Group: ' + pack.label;
+                list.textContent = '';
+                (pack.videos || []).forEach(function (v) {
+                    var li = document.createElement('li');
+                    var titleWrap = document.createElement('span');
+                    if (v.sourceUrl) {
+                        appendCreditLink(titleWrap, v.sourceUrl, v.title);
+                    } else {
+                        titleWrap.textContent = v.title;
+                    }
+                    li.appendChild(titleWrap);
+                    li.appendChild(document.createTextNode(' — ' + (v.author || 'Unknown')));
+                    if (v.license) {
+                        li.appendChild(document.createTextNode(' · '));
+                        if (v.licenseUrl) {
+                            appendCreditLink(li, v.licenseUrl, v.license);
+                        } else {
+                            li.appendChild(document.createTextNode(v.license));
+                        }
+                    }
+                    if (v.modified) {
+                        var mod = document.createElement('span');
+                        mod.className = 'mc-mod';
+                        mod.textContent = v.shareAlike
+                            ? 'Adapted (trimmed/re-encoded) and redistributed under the same CC BY-SA license.'
+                            : 'Adapted for this page (trimmed and/or re-encoded).';
+                        li.appendChild(mod);
+                    }
+                    if (v.note) {
+                        var n = document.createElement('span');
+                        n.className = 'mc-mod';
+                        n.textContent = v.note;
+                        li.appendChild(n);
+                    }
+                    list.appendChild(li);
+                });
+                musicEl.textContent = '';
+                if (useVideoAudio) {
+                    musicEl.appendChild(document.createTextNode(
+                        'Background theme music is not used in this group. Audio is from the public-domain film credited above.'
+                    ));
+                } else {
+                    var strong = document.createElement('strong');
+                    strong.textContent = MUSIC_CREDIT.title;
+                    musicEl.appendChild(strong);
+                    musicEl.appendChild(document.createTextNode(' by '));
+                    appendCreditLink(musicEl, MUSIC_CREDIT.authorUrl, MUSIC_CREDIT.author);
+                    musicEl.appendChild(document.createTextNode(' (incompetech.com). Licensed under '));
+                    appendCreditLink(musicEl, MUSIC_CREDIT.licenseUrl, MUSIC_CREDIT.license);
+                    musicEl.appendChild(document.createTextNode('. ' + MUSIC_CREDIT.note));
+                }
+            }
+
+            function ensureMuted(el) {
+                if (!el) { return; }
+                el.muted = true;
+                el.defaultMuted = true;
+                el.setAttribute('muted', 'muted');
+                el.volume = 0;
+                el.removeAttribute('controls');
+                el.setAttribute('playsinline', '');
+                if (el.disablePictureInPicture !== undefined) {
+                    el.disablePictureInPicture = true;
+                }
+                applyPlaybackRate(el);
+            }
+
+            function applyLayerAudio(el) {
+                if (!el) { return; }
+                el.removeAttribute('controls');
+                el.setAttribute('playsinline', '');
+                if (el.disablePictureInPicture !== undefined) {
+                    el.disablePictureInPicture = true;
+                }
+                if (useVideoAudio) {
+                    el.muted = false;
+                    el.defaultMuted = false;
+                    el.removeAttribute('muted');
+                    el.volume = 0.9;
+                } else {
+                    el.muted = true;
+                    el.defaultMuted = true;
+                    el.setAttribute('muted', 'muted');
+                    el.volume = 0;
+                }
+                applyPlaybackRate(el);
+            }
+
+            function showLoginBox() {
+                var c = document.querySelector('.login-orb');
+                if (c) { c.classList.add('visible'); }
+            }
+
+            function setCreditIndex(idx) {
+                var cred = document.getElementById('login-credits');
+                if (!cred) { return; }
+                if (creditFadeInTimer) {
+                    clearTimeout(creditFadeInTimer);
+                    creditFadeInTimer = null;
+                }
+                var slides = cred.querySelectorAll('.credit-slide');
+                var n = slides.length;
+                if (!n) { return; }
+                var hadVisible = false;
+                var s;
+                for (s = 0; s < n; s++) {
+                    if (slides[s].classList.contains('credit-slide--visible')) {
+                        hadVisible = true;
+                    }
+                    slides[s].classList.remove('credit-slide--visible');
+                }
+                if (idx < 0) {
+                    return;
+                }
+                var k = ((idx % n) + n) % n;
+                function showSlide() {
+                    slides[k].classList.add('credit-slide--visible');
+                }
+                if (!hadVisible) {
+                    requestAnimationFrame(function () {
+                        showSlide();
+                    });
+                } else {
+                    creditFadeInTimer = window.setTimeout(function () {
+                        creditFadeInTimer = null;
+                        showSlide();
+                    }, CREDIT_FADE_MS);
+                }
+            }
+
+            function crossfadeToNext() {
+                if (transitionPending) { return; }
+                /* Modulo wraps: after the last file, loadPos is 0 → playlist loops forever */
+                var loadPos = (pos + 1) % order.length;
+                var backIdx = 1 - front;
+                var frontEl = layers[front];
+                var backEl = layers[backIdx];
+                if (!frontEl || !backEl) { return; }
+                transitionPending = true;
+                function cleanupOld() {
+                    try {
+                        frontEl.pause();
+                        frontEl.removeAttribute('src');
+                        frontEl.load();
+                    } catch (e) {}
+                    transitionPending = false;
+                }
+                function onCanPlay() {
+                    backEl.removeEventListener('canplay', onCanPlay);
+                    backEl.removeEventListener('error', onError);
+                    applyLayerAudio(backEl);
+                    /* During crossfade only the incoming front should carry audio */
+                    if (useVideoAudio) {
+                        frontEl.muted = true;
+                        frontEl.volume = 0;
+                    }
+                    backEl.play().catch(function () {});
+                    /* Double rAF so opacity starts at 0 before transitioning to front (fade in) */
+                    requestAnimationFrame(function () {
+                        requestAnimationFrame(function () {
+                            backEl.classList.remove('is-back');
+                            backEl.classList.add('is-front');
+                            frontEl.classList.remove('is-front');
+                            frontEl.classList.add('is-back');
+                            front = backIdx;
+                            pos = loadPos;
+                            window.setTimeout(cleanupOld, CROSSFADE_MS + 120);
+                        });
+                    });
+                }
+                function onError() {
+                    backEl.removeEventListener('error', onError);
+                    loadPos = (loadPos + 1) % order.length;
+                    if (loadPos === pos) {
+                        transitionPending = false;
+                        return;
+                    }
+                    backEl.addEventListener('canplay', onCanPlay, { once: true });
+                    backEl.addEventListener('error', onError, { once: true });
+                    backEl.src = BASE + order[loadPos];
+                }
+                backEl.addEventListener('canplay', onCanPlay, { once: true });
+                backEl.addEventListener('error', onError, { once: true });
+                backEl.src = BASE + order[loadPos];
+            }
+
+            function onTimeUpdate(e) {
+                var v = e.target;
+                if (!v.classList.contains('is-front') || transitionPending) { return; }
+                var d = v.duration;
+                if (!d || !isFinite(d)) { return; }
+                if (v.currentTime <= 0) { return; }
+                /* Short clips still need a lead-in for crossfade; never exceed ~35% of duration */
+                var lead = Math.min(FADE_LEAD_SEC, Math.max(0.4, d * 0.35));
+                if (d - v.currentTime > lead) { return; }
+                crossfadeToNext();
+            }
+
+            function onLayerEnded(e) {
+                if (e.target !== layers[front]) { return; }
+                if (transitionPending) { return; }
+                crossfadeToNext();
+            }
+
+            window.addEventListener('load', function () {
+                var w = document.getElementById('video-bg-wrap');
+                if (!w) { return; }
+                if (useVideoAudio) {
+                    w.classList.add('login-bg--wwii');
+                    syncWelcomeMusic();
+                }
+                layers = [
+                    document.getElementById('bgv-0'),
+                    document.getElementById('bgv-1')
+                ];
+                if (!layers[0] || !layers[1]) { return; }
+                layers[0].classList.add('is-front');
+                layers[0].classList.remove('is-back');
+                layers[1].classList.add('is-back');
+                layers[1].classList.remove('is-front');
+                applyLayerAudio(layers[0]);
+                applyLayerAudio(layers[1]);
+                layers[0].addEventListener('ended', onLayerEnded);
+                layers[1].addEventListener('ended', onLayerEnded);
+                layers[0].addEventListener('timeupdate', onTimeUpdate);
+                layers[1].addEventListener('timeupdate', onTimeUpdate);
+                layers[0].addEventListener('playing', function () { applyPlaybackRate(layers[0]); });
+                layers[1].addEventListener('playing', function () { applyPlaybackRate(layers[1]); });
+                [layers[0], layers[1]].forEach(function (v) {
+                    v.addEventListener('enterpictureinpicture', function () {
+                        if (document.pictureInPictureElement === v && document.exitPictureInPicture) {
+                            document.exitPictureInPicture().catch(function () {});
+                        }
+                    });
+                });
+                function startCreditTimer() {
+                    if (creditRotateTimer) {
+                        clearInterval(creditRotateTimer);
+                        creditRotateTimer = null;
+                    }
+                    var credEl = document.getElementById('login-credits');
+                    var nSlides = credEl ? credEl.querySelectorAll('.credit-slide').length : 4;
+                    if (nSlides < 1) { return; }
+                    function runCredits() {
+                        creditIdx = 0;
+                        setCreditIndex(0);
+                        creditRotateTimer = window.setInterval(function () {
+                            creditIdx += 1;
+                            if (creditIdx >= nSlides) {
+                                if (creditRotateTimer) {
+                                    clearInterval(creditRotateTimer);
+                                    creditRotateTimer = null;
+                                }
+                                return;
+                            }
+                            setCreditIndex(creditIdx);
+                        }, CREDITS_INTERVAL_MS);
+                    }
+                    if (CREDITS_START_DELAY_MS <= 0) {
+                        runCredits();
+                    } else {
+                        setCreditIndex(-1);
+                        window.setTimeout(runCredits, CREDITS_START_DELAY_MS);
+                    }
+                }
+                function startFirst(i) {
+                    if (i >= order.length) { return; }
+                    var v0 = layers[0];
+                    function onFail() {
+                        v0.removeEventListener('error', onFail);
+                        startFirst(i + 1);
+                    }
+                    function onReady() {
+                        v0.removeEventListener('canplay', onReady);
+                        pos = i;
+                        applyLayerAudio(v0);
+                        syncWelcomeMusic();
+                        startCreditTimer();
+                        v0.play().catch(function () {});
+                    }
+                    v0.addEventListener('error', onFail, { once: true });
+                    v0.addEventListener('canplay', onReady, { once: true });
+                    v0.src = BASE + order[i];
+                }
+                startFirst(0);
+                window.setTimeout(showLoginBox, 5000);
+            });
+
+            /* Browsers often block unmuted autoplay — unlock film audio on first gesture for WWII / United States */
+            document.addEventListener('click', function () {
+                if (useVideoAudio) {
+                    syncWelcomeMusic();
+                    document.querySelectorAll('.login-bg-video').forEach(function (v) {
+                        if (v.classList.contains('is-front')) {
+                            applyLayerAudio(v);
+                            v.play().catch(function () {});
+                        } else {
+                            v.muted = true;
+                            v.volume = 0;
+                        }
+                    });
+                } else {
+                    document.querySelectorAll('.login-bg-video').forEach(ensureMuted);
+                }
+            }, { once: true });
+            document.addEventListener('keydown', function () {
+                if (!useVideoAudio) { return; }
+                syncWelcomeMusic();
+                document.querySelectorAll('.login-bg-video.is-front').forEach(function (v) {
+                    applyLayerAudio(v);
+                    v.play().catch(function () {});
+                });
+            }, { once: true });
+
+            (function scheduleTelecomRelate() {
+                function initTelecomRelate() {
+                    var root = document.getElementById('telecom-relate');
+                    var btn = document.getElementById('telecom-relate-btn');
+                    var titleEl = document.getElementById('telecom-relate-title');
+                    var bodyEl = document.getElementById('telecom-relate-body');
+                    if (!root || !btn || !titleEl || !bodyEl) { return; }
+                    var info = GROUP_TELECOM_RELATE[groupIdx] || GROUP_TELECOM_RELATE[0];
+                    titleEl.textContent = info.title;
+                    bodyEl.textContent = info.body;
+                    btn.addEventListener('click', function (ev) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        var open = root.classList.toggle('is-open');
+                        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                    });
+                }
+                function initMediaCredits() {
+                    var root = document.getElementById('media-credits');
+                    var btn = document.getElementById('media-credits-btn');
+                    if (!root || !btn) { return; }
+                    renderMediaCredits();
+                    btn.addEventListener('click', function (ev) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        var open = root.classList.toggle('is-open');
+                        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+                    });
+                }
+                function bootOverlays() {
+                    initTelecomRelate();
+                    initMediaCredits();
+                }
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', bootOverlays);
+                } else {
+                    bootOverlays();
+                }
+            })();
+        })();
+    </script>
+    <div id="video-bg-wrap" aria-hidden="true">
+        <video id="bgv-0" class="login-bg-video" playsinline preload="auto" disablePictureInPicture disableRemotePlayback>Your browser does not support the video tag.</video>
+        <video id="bgv-1" class="login-bg-video" playsinline preload="auto" disablePictureInPicture disableRemotePlayback></video>
+    </div>
+    <div id="telecom-relate" class="telecom-relate">
+        <button type="button" id="telecom-relate-btn" class="telecom-relate-btn" aria-expanded="false" aria-controls="telecom-relate-panel">
+            How does this relate to telecom and networking?
+        </button>
+        <div id="telecom-relate-panel" class="telecom-relate-panel" role="region" aria-labelledby="telecom-relate-btn">
+            <div class="telecom-relate-box">
+                <strong id="telecom-relate-title"></strong>
+                <p id="telecom-relate-body"></p>
+            </div>
+        </div>
+    </div>
+    <div id="login-credits" aria-hidden="true">
+        <div class="credit-slide" data-credit="0">Tracedroute.net presents....</div>
+        <div class="credit-slide" data-credit="1">One tool to manage all infrastructure....</div>
+        <div class="credit-slide" data-credit="2">Your new command center....</div>
+        <div class="credit-slide credit-slide--finale" data-credit="3">
+            <div class="credit-lockup" aria-label="Hayabusa Controller Node">
+                <span class="credit-lockup-product">
+                    <span class="credit-lockup-line">Hayabusa</span>
+                    <span class="credit-lockup-line">Controller Node</span>
+                </span>
+                <span class="credit-lockup-trim"></span>
+                <span class="credit-lockup-tagline">Software Defined Infrastructure</span>
+            </div>
+        </div>
+    </div>
+    <style>
+      #tailscaleNotice {
+        position: fixed;
+        top: 1.25rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10001;
+        width: min(520px, calc(100vw - 2rem));
+        padding: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        color: #f4f1ea;
+        font-family: 'Poppins', sans-serif;
+        background: linear-gradient(165deg, rgba(18, 22, 30, 0.94), rgba(10, 12, 18, 0.96));
+        border: 1px solid rgba(255, 200, 120, 0.28);
+        box-shadow:
+          0 18px 50px rgba(0, 0, 0, 0.45),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+      #tailscaleNotice::before {
+        content: "";
+        display: block;
+        height: 3px;
+        background: linear-gradient(90deg, #c45c3a, #d4a574 55%, #8b1e2d);
+      }
+      #tailscaleNotice .ts-inner {
+        padding: 1rem 1.1rem 1.05rem;
+      }
+      #tailscaleNotice .ts-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        margin-bottom: 0.35rem;
+      }
+      #tailscaleNotice .ts-body {
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: rgba(244, 241, 234, 0.88);
+        margin-bottom: 0.75rem;
+      }
+      #tailscaleNotice .ts-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      #tailscaleNotice a.ts-install {
+        display: inline-block;
+        padding: 0.45rem 0.85rem;
+        border-radius: 8px;
+        background: #c45c3a;
+        color: #fff;
+        text-decoration: none;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      #tailscaleNotice a.ts-install:hover { filter: brightness(1.08); }
+      #tailscaleNotice button.ts-refresh {
+        border: 1px solid rgba(255,255,255,0.22);
+        background: transparent;
+        color: rgba(244,241,234,0.92);
+        border-radius: 8px;
+        padding: 0.45rem 0.75rem;
+        font-size: 0.75rem;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      #tailscaleNotice button.ts-refresh:hover {
+        border-color: rgba(255,255,255,0.4);
+      }
+      body.has-tailscale-notice #loginFlash {
+        top: calc(1.25rem + 7.5rem);
+      }
+      @media (max-width: 640px) {
+        body.has-tailscale-notice #loginFlash { top: calc(1.25rem + 9rem); }
+      }
+      #loginFlash {
+        position: fixed;
+        top: 1.25rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10000;
+        width: min(440px, calc(100vw - 2rem));
+        padding: 0;
+        border-radius: 14px;
+        overflow: hidden;
+        color: #f4f1ea;
+        font-family: 'Poppins', sans-serif;
+        background: linear-gradient(165deg, rgba(18, 22, 30, 0.92), rgba(10, 12, 18, 0.94));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow:
+          0 18px 50px rgba(0, 0, 0, 0.45),
+          inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        animation: loginFlashIn 320ms ease-out;
+      }
+      #loginFlash::before {
+        content: "";
+        display: block;
+        height: 3px;
+        background: linear-gradient(90deg, #8b1e2d, #c45c3a 45%, #d4a574);
+      }
+      #loginFlash .flash-inner {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 0.85rem;
+        align-items: start;
+        padding: 1rem 1.05rem 1.05rem 1.1rem;
+      }
+      #loginFlash .flash-icon {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: rgba(196, 92, 58, 0.18);
+        border: 1px solid rgba(212, 165, 116, 0.35);
+        color: #e8c9a8;
+        font-size: 0.95rem;
+        line-height: 1;
+        margin-top: 0.1rem;
+      }
+      #loginFlash .flash-copy {
+        min-width: 0;
+      }
+      #loginFlash .flash-title {
+        margin: 0 0 0.28rem;
+        font-family: 'Syncopate', sans-serif;
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #e8c9a8;
+      }
+      #loginFlash .flash-body {
+        margin: 0;
+        font-size: 0.92rem;
+        font-weight: 400;
+        line-height: 1.45;
+        color: rgba(244, 241, 234, 0.92);
+      }
+      #loginFlash .flash-body strong {
+        font-weight: 600;
+        color: #fff;
+      }
+      #loginFlash .flash-dismiss {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: rgba(244, 241, 234, 0.55);
+        cursor: pointer;
+        font-size: 1.15rem;
+        line-height: 1;
+        padding: 0.15rem;
+        border-radius: 6px;
+      }
+      #loginFlash .flash-dismiss:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      @keyframes loginFlashIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+      }
+      @media (max-width: 520px) {
+        #loginFlash .flash-inner { grid-template-columns: auto 1fr; }
+        #loginFlash .flash-dismiss { grid-column: 2; justify-self: end; }
+      }
+    </style>
+    {% set messages = flash_messages if flash_messages is defined else [] %}
+    {% if platform_tailscale_missing | default(false) %}
+    <div id="tailscaleNotice" role="status" aria-live="polite">
+      <div class="ts-inner">
+        <p class="ts-title">{{ platform_tailscale_title | default("Mesh client unavailable") }}</p>
+        <p class="ts-body">{{ platform_tailscale_body | default("Hayabusa Controller ships a bundled open-source mesh client. If mesh is unavailable, restart the app or reinstall so mesh/bin is present. You do not need Tailscale Inc’s proprietary Windows installer.") }}</p>
+        <div class="ts-actions">
+          {% if platform_tailscale_url | default('') %}
+          <a class="ts-install" id="tailscaleInstallLink" href="{{ platform_tailscale_url }}" target="_blank" rel="noopener noreferrer">Get help</a>
+          {% endif %}
+          <button type="button" class="ts-refresh" id="tailscaleRecheckBtn">Recheck mesh</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        document.body.classList.add("has-tailscale-notice");
+        function applyStatus(data) {
+          var el = document.getElementById("tailscaleNotice");
+          if (!el) return;
+          if (data && data.ok) {
+            el.remove();
+            document.body.classList.remove("has-tailscale-notice");
+            return;
+          }
+          var a = document.getElementById("tailscaleInstallLink");
+          if (a) {
+            if (data && data.download_url) {
+              a.href = data.download_url;
+              a.style.display = "";
+            } else {
+              a.style.display = "none";
+            }
+          }
+          if (data && data.ui_title) {
+            var t = el.querySelector(".ts-title");
+            if (t) t.textContent = data.ui_title;
+          }
+          if (data && data.ui_body) {
+            var b = el.querySelector(".ts-body");
+            if (b) b.textContent = data.ui_body;
+          }
+        }
+        function recheck() {
+          fetch("/api/platform/tailscale", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(applyStatus)
+            .catch(function () {});
+        }
+        var btn = document.getElementById("tailscaleRecheckBtn");
+        if (btn) btn.addEventListener("click", recheck);
+        // Keep the notice accurate while the user stays on the login wheel.
+        setInterval(recheck, 15000);
+      })();
+    </script>
+    {% endif %}
+    {% if messages %}
+    <div id="loginFlash" role="alert" aria-live="polite">
+      <div class="flash-inner">
+        <div class="flash-icon" aria-hidden="true">!</div>
+        <div class="flash-copy">
+          <p class="flash-title">Sign-in unavailable</p>
+          {% for message in messages %}
+          <p class="flash-body">{{ message | safe }}</p>
+          {% endfor %}
+        </div>
+        <button type="button" class="flash-dismiss" aria-label="Dismiss" onclick="document.getElementById('loginFlash').remove()">&times;</button>
+      </div>
+    </div>
+    {% endif %}
+<div id="loginOrb" class="login-orb" aria-label="Hayabusa Controller Node sign in">
+        <button type="button" class="login-orb-center" onclick="toggleLoginWheel()">Login</button>
+        <div class="login-orb-wheel">
+            <div class="donut-container">
+                <div class="donut-wrapper">
+                    <svg class="donut-svg" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="grad-teams" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(123,131,235,0.48);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(70,78,184,0.34);stop-opacity:1" />
+                            </linearGradient>
+                            <linearGradient id="grad-slack" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(74,21,75,0.48);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(224,30,90,0.34);stop-opacity:1" />
+                            </linearGradient>
+                            <linearGradient id="grad-discord" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(88,101,242,0.48);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(235,69,158,0.34);stop-opacity:1" />
+                            </linearGradient>
+                            <linearGradient id="grad-google" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(66,133,244,0.48);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(52,168,83,0.34);stop-opacity:1" />
+                            </linearGradient>
+                            <linearGradient id="grad-github" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(36,41,46,0.55);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(88,96,105,0.38);stop-opacity:1" />
+                            </linearGradient>
+                            <linearGradient id="grad-manual" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:rgba(51,51,51,0.52);stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:rgba(0,0,0,0.34);stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <circle class="donut-outer-ring" cx="400" cy="400" r="280" />
+                        <g class="donut-section-group" data-section="microsoft" onclick="selectLoginMethod('microsoft')">
+                            <path class="donut-segment" d="M 400.000,120.000 A 280,280 0 0,1 642.487,260.000 L 512.583,335.000 A 130,130 0 0,0 400.000,270.000 Z" fill="url(#grad-teams)" />
+                            <g class="donut-label-group" transform="translate(502.5,222.5)"><text class="donut-label-text" style="font-size:15px;">MICROSOFT</text></g>
+                        </g>
+                        <g class="donut-section-group" data-section="slack" onclick="selectLoginMethod('slack')">
+                            <path class="donut-segment" d="M 642.487,260.000 A 280,280 0 0,1 642.487,540.000 L 512.583,465.000 A 130,130 0 0,0 512.583,335.000 Z" fill="url(#grad-slack)" />
+                            <g class="donut-label-group" transform="translate(605,400)"><text class="donut-label-text" style="font-size:18px;">SLACK</text></g>
+                        </g>
+                        <g class="donut-section-group" data-section="discord" onclick="selectLoginMethod('discord')">
+                            <path class="donut-segment" d="M 642.487,540.000 A 280,280 0 0,1 400.000,680.000 L 400.000,530.000 A 130,130 0 0,0 512.583,465.000 Z" fill="url(#grad-discord)" />
+                            <g class="donut-label-group" transform="translate(502.5,577.5)"><text class="donut-label-text" style="font-size:16px;">DISCORD</text></g>
+                        </g>
+                        <g class="donut-section-group" data-section="google" onclick="selectLoginMethod('google')">
+                            <path class="donut-segment" d="M 400.000,680.000 A 280,280 0 0,1 157.513,540.000 L 287.417,465.000 A 130,130 0 0,0 400.000,530.000 Z" fill="url(#grad-google)" />
+                            <g class="donut-label-group" transform="translate(297.5,577.5)"><text class="donut-label-text" style="font-size:16px;">GOOGLE</text></g>
+                        </g>
+                        <g class="donut-section-group" data-section="github" onclick="selectLoginMethod('github')">
+                            <path class="donut-segment" d="M 157.513,540.000 A 280,280 0 0,1 157.513,260.000 L 287.417,335.000 A 130,130 0 0,0 287.417,465.000 Z" fill="url(#grad-github)" />
+                            <g class="donut-label-group" transform="translate(195,400)"><text class="donut-label-text" style="font-size:16px;">GITHUB</text></g>
+                        </g>
+                        <g class="donut-section-group" data-section="manual" onclick="selectLoginMethod('manual')">
+                            <path class="donut-segment" d="M 157.513,260.000 A 280,280 0 0,1 400.000,120.000 L 400.000,270.000 A 130,130 0 0,0 287.417,335.000 Z" fill="url(#grad-manual)" />
+                            <g class="donut-label-group" transform="translate(297.5,222.5)"><text class="donut-label-text" style="font-size:16px;">MANUAL</text></g>
+                        </g>
+                        <circle class="donut-center" cx="400" cy="400" r="130" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form id="manualAdminLoginForm" method="POST" action="/auth/manual" style="display:none;">
+        <input type="hidden" name="manual_admin_login" value="1" />
+        <input type="hidden" id="manualAdminUsernameInput" name="username" value="admin" />
+        <input type="hidden" id="manualAdminPasswordInput" name="password" value="" />
+        {% if request.query_params.get('next') %}
+        <input type="hidden" name="next" value="{{ request.query_params.get('next') }}" />
+        {% endif %}
+    </form>
+    <div id="hayabusaAuthModal" class="manual-login-modal" role="dialog" aria-modal="true" aria-labelledby="hayabusaAuthTitle">
+        <div class="manual-login-dialog">
+            <h3 id="hayabusaAuthTitle" class="manual-login-title">{% if sso_enabled %}Manual Auth{% else %}Hayabusa Auth{% endif %}</h3>
+            <div id="hayabusaAuthError" class="manual-login-error"></div>
+            <div id="googleTotpStepEmail" class="totp-step active">
+                <p class="totp-note">{% if sso_enabled %}Email + password + authenticator code.{% else %}Whitelisted email + 6-digit code from your authenticator app (Google Authenticator, Authy, etc.).{% endif %}</p>
+                <input id="googleLoginEmailField" class="manual-login-input" type="email" autocomplete="email" placeholder="Email address">
+                {% if sso_enabled %}
+                <input id="googleLoginPasswordField" class="manual-login-input" type="password" autocomplete="current-password" placeholder="Password">
+                {% endif %}
+                <div class="manual-login-actions">
+                    <button type="button" class="manual-btn cancel" onclick="closeHayabusaAuthModal()">Cancel</button>
+                    <button type="button" class="manual-btn submit" onclick="submitGoogleTotpEmail()">Continue</button>
+                </div>
+            </div>
+            <div id="googleTotpStepSetup" class="totp-step">
+                <p class="totp-note">Scan this QR code with your authenticator app (tap + → Scan a QR code).</p>
+                <div class="totp-qr-wrap"><div id="googleTotpQr" aria-label="Manual Auth QR code"></div></div>
+                <details class="totp-manual-fallback">
+                    <summary>Can't scan? Use setup key instead</summary>
+                    <div id="googleTotpSecret" class="totp-secret"></div>
+                </details>
+                <input id="googleTotpSetupCodeField" class="manual-login-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code to confirm">
+                <div class="manual-login-actions">
+                    <button type="button" class="manual-btn cancel" onclick="showGoogleTotpStep('email')">Back</button>
+                    <button type="button" class="manual-btn submit" onclick="submitGoogleTotpSetup()">Enable &amp; sign in</button>
+                </div>
+            </div>
+            <div id="googleTotpStepVerify" class="totp-step">
+                <p class="totp-note">Enter the current 6-digit code from your authenticator app.</p>
+                <input id="googleTotpVerifyCodeField" class="manual-login-input" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code">
+                <p class="totp-note totp-reenroll" id="googleTotpReenrollNote" style="display:none;">After migrating Hayabusa or replacing your phone, the old codes will not work.</p>
+                <button type="button" class="totp-link-btn" id="googleTotpReenrollBtn" style="display:none;" onclick="submitGoogleTotpReEnroll()">Set up authenticator again (new QR code)</button>
+                <div class="manual-login-actions">
+                    <button type="button" class="manual-btn cancel" onclick="showGoogleTotpStep('email')">Back</button>
+                    <button type="button" class="manual-btn submit" onclick="submitGoogleTotpVerify()">Sign in</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="manualLoginModal" class="manual-login-modal" role="dialog" aria-modal="true" aria-labelledby="manualLoginTitle">
+        <div class="manual-login-dialog">
+            <div id="manualLoginStepChoose" class="manual-step active">
+                <h3 id="manualLoginTitle" class="manual-login-title">Manual sign in</h3>
+                <p class="totp-note">Choose how to authenticate.</p>
+                {% if manual_admin_login_enabled %}
+                <button type="button" class="manual-chooser-btn" onclick="showManualPasswordStep()">
+                    Password
+                    <small>Hub manual login password</small>
+                </button>
+                {% endif %}
+                {% if hayabusa_auth_enabled %}
+                <button type="button" class="manual-chooser-btn" onclick="openHayabusaAuthFromManual()">
+                    {% if sso_enabled %}Manual Auth{% else %}Hayabusa Auth{% endif %}
+                    <small>Email + authenticator app (QR / TOTP)</small>
+                </button>
+                {% endif %}
+                <div class="manual-login-actions">
+                    <button type="button" class="manual-btn cancel" onclick="closeManualLoginModal()">Cancel</button>
+                </div>
+            </div>
+            <div id="manualLoginStepPassword" class="manual-step">
+                <h3 class="manual-login-title">Manual login password</h3>
+                <div id="manualLoginError" class="manual-login-error">{% if manual_login_error %}{{ manual_login_error }}{% endif %}</div>
+                <input id="manualLoginUsernameField" class="manual-login-input" type="text" autocomplete="username" placeholder="Username" />
+                <input id="manualLoginPasswordField" class="manual-login-input" type="password" autocomplete="current-password" placeholder="Enter password" />
+                <div class="manual-login-actions">
+                    <button type="button" class="manual-btn cancel" onclick="showManualChooseStep()">Back</button>
+                    <button type="button" class="manual-btn submit" onclick="submitManualLoginModal()">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/qrcode.min.js"></script>
+    <script>
+    (function () {
+      var orb = document.getElementById('loginOrb');
+      var hayabusaAuthModal = document.getElementById('hayabusaAuthModal');
+      var googleErrorEl = document.getElementById('hayabusaAuthError');
+      var googleEmailField = document.getElementById('googleLoginEmailField');
+      var googlePasswordField = document.getElementById('googleLoginPasswordField');
+      var googleTotpSecretEl = document.getElementById('googleTotpSecret');
+      var googleSetupCodeField = document.getElementById('googleTotpSetupCodeField');
+      var googleVerifyCodeField = document.getElementById('googleTotpVerifyCodeField');
+      var manualModal = document.getElementById('manualLoginModal');
+      var manualUsernameField = document.getElementById('manualLoginUsernameField');
+      var manualPasswordField = document.getElementById('manualLoginPasswordField');
+      var manualErrorEl = document.getElementById('manualLoginError');
+      var manualLoginEnabled = {{ 'true' if manual_admin_login_enabled else 'false' }};
+      var hayabusaAuthEnabled = {{ 'true' if hayabusa_auth_enabled else 'false' }};
+      var firstRunSetup = {{ 'true' if first_run_setup else 'false' }};
+      var googleOauthConfigured = {{ 'true' if google_oauth_configured else 'false' }};
+      var ssoEnabled = {{ 'true' if sso_enabled else 'false' }};
+      function showManualStep(step) {
+        ['choose', 'password'].forEach(function (name) {
+          var el = document.getElementById('manualLoginStep' + name.charAt(0).toUpperCase() + name.slice(1));
+          if (el) { el.classList.toggle('active', name === step); }
+        });
+      }
+      function showGoogleTotpStep(step) {
+        ['email', 'setup', 'verify'].forEach(function (name) {
+          var el = document.getElementById('googleTotpStep' + name.charAt(0).toUpperCase() + name.slice(1));
+          if (el) { el.classList.toggle('active', name === step); }
+        });
+        if (googleErrorEl) { googleErrorEl.textContent = ''; }
+      }
+      window.openHayabusaAuthModal = function () {
+        if (!hayabusaAuthModal) { return; }
+        showGoogleTotpStep('email');
+        if (googleEmailField) { googleEmailField.value = ''; }
+        if (googlePasswordField) { googlePasswordField.value = ''; }
+        if (googleSetupCodeField) { googleSetupCodeField.value = ''; }
+        if (googleVerifyCodeField) { googleVerifyCodeField.value = ''; }
+        hayabusaAuthModal.classList.add('open');
+        setTimeout(function () { if (googleEmailField) { googleEmailField.focus(); } }, 0);
+      };
+      window.closeHayabusaAuthModal = function () {
+        if (!hayabusaAuthModal) { return; }
+        hayabusaAuthModal.classList.remove('open');
+        showGoogleTotpStep('email');
+      };
+      function renderGoogleTotpQr(uri) {
+        var host = document.getElementById('googleTotpQr');
+        if (!host) { return; }
+        host.innerHTML = '';
+        if (!uri) { return; }
+        if (typeof QRCode === 'undefined') {
+          host.textContent = 'QR library failed to load. Use the manual setup key below.';
+          return;
+        }
+        try {
+          new QRCode(host, {
+            text: uri,
+            width: 200,
+            height: 200,
+            colorDark: '#ffffff',
+            colorLight: '#0a0f18',
+            correctLevel: QRCode.CorrectLevel.M
+          });
+        } catch (_) {
+          host.textContent = 'Could not render QR. Use the manual setup key below.';
+        }
+      }
+      function totpApi(path, body) {
+        return fetch(path, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {})
+        }).then(function (r) {
+          return r.text().then(function (text) {
+            var j = {};
+            try { j = text ? JSON.parse(text) : {}; } catch (_) {
+              j = { success: false, error: r.ok ? 'Invalid server response.' : ('Server error (HTTP ' + r.status + ').') };
+            }
+            return { ok: r.ok, data: j };
+          });
+        });
+      }
+      window.submitGoogleTotpEmail = function () {
+        var email = (googleEmailField && googleEmailField.value || '').trim();
+        var password = (googlePasswordField && googlePasswordField.value || '');
+        if (!email) {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Email is required.'; }
+          return;
+        }
+        if (ssoEnabled && !password) {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Password is required.'; }
+          return;
+        }
+        var body = ssoEnabled ? { email: email, password: password } : { email: email };
+        totpApi('/api/auth/totp/begin', body).then(function (res) {
+          if (!res.ok || !res.data || res.data.success === false) {
+            if (googleErrorEl) { googleErrorEl.textContent = (res.data && res.data.error) || 'Request failed.'; }
+            return;
+          }
+          if (res.data.mode === 'setup') {
+            if (googleTotpSecretEl) { googleTotpSecretEl.textContent = res.data.secret || ''; }
+            renderGoogleTotpQr(res.data.provisioning_uri || '');
+            showGoogleTotpStep('setup');
+            if (googleSetupCodeField) { googleSetupCodeField.focus(); }
+            return;
+          }
+          showGoogleTotpStep('verify');
+          var reBtn = document.getElementById('googleTotpReenrollBtn');
+          var reNote = document.getElementById('googleTotpReenrollNote');
+          var showRe = !!(res.data && res.data.can_re_enroll);
+          if (reBtn) { reBtn.style.display = showRe ? '' : 'none'; }
+          if (reNote) { reNote.style.display = showRe ? '' : 'none'; }
+          if (googleVerifyCodeField) { googleVerifyCodeField.focus(); }
+        }).catch(function () {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Unable to reach the server.'; }
+        });
+      };
+      window.submitGoogleTotpSetup = function () {
+        var code = (googleSetupCodeField && googleSetupCodeField.value || '').trim();
+        totpApi('/api/auth/totp/setup', { code: code }).then(function (res) {
+          if (!res.ok || !res.data || res.data.success === false) {
+            if (googleErrorEl) { googleErrorEl.textContent = (res.data && res.data.error) || 'Setup failed.'; }
+            return;
+          }
+          window.location.href = res.data.redirect || '/';
+        }).catch(function () {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Unable to reach the server.'; }
+        });
+      };
+      window.submitGoogleTotpVerify = function () {
+        var code = (googleVerifyCodeField && googleVerifyCodeField.value || '').trim();
+        totpApi('/api/auth/totp/verify', { code: code }).then(function (res) {
+          if (!res.ok || !res.data || res.data.success === false) {
+            if (googleErrorEl) { googleErrorEl.textContent = (res.data && res.data.error) || 'Sign-in failed.'; }
+            return;
+          }
+          window.location.href = res.data.redirect || '/';
+        }).catch(function () {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Unable to reach the server.'; }
+        });
+      };
+      window.submitGoogleTotpReEnroll = function () {
+        if (googleErrorEl) { googleErrorEl.textContent = ''; }
+        totpApi('/api/auth/totp/re-enroll', {}).then(function (res) {
+          if (!res.ok || !res.data || res.data.success === false) {
+            if (googleErrorEl) { googleErrorEl.textContent = (res.data && res.data.error) || 'Re-enrollment failed.'; }
+            return;
+          }
+          if (googleTotpSecretEl) { googleTotpSecretEl.textContent = res.data.secret || ''; }
+          renderGoogleTotpQr(res.data.provisioning_uri || '');
+          showGoogleTotpStep('setup');
+          if (googleSetupCodeField) { googleSetupCodeField.value = ''; googleSetupCodeField.focus(); }
+        }).catch(function () {
+          if (googleErrorEl) { googleErrorEl.textContent = 'Unable to reach the server.'; }
+        });
+      };
+      window.toggleLoginWheel = function () {
+        if (!orb) { return; }
+        orb.classList.toggle('expanded');
+      };
+      window.showManualChooseStep = function () {
+        showManualStep('choose');
+        if (manualErrorEl) { manualErrorEl.textContent = ''; }
+      };
+      window.showManualPasswordStep = function () {
+        if (!manualModal || !manualPasswordField || !manualUsernameField) { return; }
+        manualUsernameField.value = 'admin';
+        manualPasswordField.value = '';
+        showManualStep('password');
+        setTimeout(function () { manualUsernameField.focus(); manualUsernameField.select(); }, 0);
+      };
+      window.openHayabusaAuthFromManual = function () {
+        closeManualLoginModal();
+        openHayabusaAuthModal();
+      };
+      window.openManualLoginModal = function () {
+        if (!manualModal) { return; }
+        if (manualErrorEl) { manualErrorEl.textContent = ''; }
+        // First-run / password-only: skip chooser and ask for username + password.
+        if (firstRunSetup || (manualLoginEnabled && !hayabusaAuthEnabled)) {
+          if (!manualPasswordField || !manualUsernameField) { return; }
+          manualUsernameField.value = 'admin';
+          manualPasswordField.value = '';
+          showManualStep('password');
+          manualModal.classList.add('open');
+          setTimeout(function () { manualUsernameField.focus(); manualUsernameField.select(); }, 0);
+          return;
+        }
+        if (!manualLoginEnabled && hayabusaAuthEnabled) {
+          openHayabusaAuthModal();
+          return;
+        }
+        showManualChooseStep();
+        manualModal.classList.add('open');
+      };
+      window.closeManualLoginModal = function () {
+        if (!manualModal || !manualPasswordField || !manualUsernameField) { return; }
+        manualModal.classList.remove('open');
+        manualUsernameField.value = 'admin';
+        manualPasswordField.value = '';
+        showManualChooseStep();
+      };
+      window.submitManualLoginModal = function () {
+        var userInput = document.getElementById('manualAdminUsernameInput');
+        var pwdInput = document.getElementById('manualAdminPasswordInput');
+        var form = document.getElementById('manualAdminLoginForm');
+        if (!manualUsernameField || !manualPasswordField || !userInput || !pwdInput || !form) { return; }
+        var enteredUsername = (manualUsernameField.value || '').trim();
+        var enteredPassword = manualPasswordField.value || '';
+        if (!enteredUsername) {
+          if (manualErrorEl) {
+            manualErrorEl.textContent = 'Username is required.';
+          }
+          manualUsernameField.focus();
+          return;
+        }
+        if (!enteredPassword.trim()) {
+          if (manualErrorEl) {
+            manualErrorEl.textContent = 'Password is required.';
+          }
+          manualPasswordField.focus();
+          return;
+        }
+        if (manualErrorEl) {
+          manualErrorEl.textContent = '';
+        }
+        userInput.value = enteredUsername;
+        pwdInput.value = enteredPassword;
+        closeManualLoginModal();
+        form.submit();
+      };
+      window.selectLoginMethod = function (kind) {
+        if (!kind) { return; }
+        // Google stays native on hayabusa.tracedroute.net (not Management hub).
+        if (kind === 'google') {
+          if (googleOauthConfigured) {
+            window.location.href = "/auth/google/start";
+          } else {
+            alert('Google Sign-In is not configured on this hub. Add Google credentials under Administrator → Access.');
+          }
+          return;
+        }
+        if (kind === 'teams' || kind === 'microsoft' || kind === 'slack' || kind === 'discord' || kind === 'github') {
+          if (ssoEnabled) {
+            window.location.href = "/auth/" + (kind === 'microsoft' ? 'microsoft' : kind) + "/start";
+            return;
+          }
+          if (kind === 'teams' || kind === 'microsoft') {
+            window.location.href = "/auth/teams/start";
+            return;
+          }
+          if (kind === 'slack') {
+            window.location.href = "/auth/slack/start";
+            return;
+          }
+          if (kind === 'google') {
+            if (googleOauthConfigured) {
+              window.location.href = "/auth/google/start";
+            } else {
+              alert('Google Sign-In is not configured on this hub. Add Google credentials under Administrator → Access.');
+            }
+            return;
+          }
+          if (kind === 'discord') {
+            window.location.href = "/auth/discord/start";
+            return;
+          }
+          if (kind === 'github') {
+            window.location.href = "/auth/github/start";
+            return;
+          }
+          alert(kind.charAt(0).toUpperCase() + kind.slice(1) + ' login is not configured yet.');
+          return;
+        }
+        if (kind === 'manual') {
+          // First-run setup: username + password only (no Hayabusa Auth chooser).
+          if (firstRunSetup && manualLoginEnabled) {
+            openManualLoginModal();
+            return;
+          }
+          if (hayabusaAuthEnabled) {
+            openHayabusaAuthModal();
+            return;
+          }
+          if (manualLoginEnabled) {
+            openManualLoginModal();
+            return;
+          }
+          alert('Manual sign-in is not available on this hub.');
+          return;
+        }
+        alert(kind.charAt(0).toUpperCase() + kind.slice(1) + ' login is not configured yet.');
+      };
+      document.addEventListener('click', function (event) {
+        if (!orb || !orb.classList.contains('expanded')) { return; }
+        if (!orb.contains(event.target)) {
+          orb.classList.remove('expanded');
+        }
+      });
+      if (manualModal) {
+        manualModal.addEventListener('click', function (event) {
+          if (event.target === manualModal) {
+            closeManualLoginModal();
+          }
+        });
+      }
+      if (hayabusaAuthModal) {
+        hayabusaAuthModal.addEventListener('click', function (event) {
+          if (event.target === hayabusaAuthModal) {
+            closeHayabusaAuthModal();
+          }
+        });
+      }
+      document.addEventListener('keydown', function (event) {
+        if (hayabusaAuthModal && hayabusaAuthModal.classList.contains('open')) {
+          if (event.key === 'Escape') {
+            closeHayabusaAuthModal();
+            return;
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            var setupActive = document.getElementById('googleTotpStepSetup');
+            var verifyActive = document.getElementById('googleTotpStepVerify');
+            if (setupActive && setupActive.classList.contains('active')) {
+              submitGoogleTotpSetup();
+            } else if (verifyActive && verifyActive.classList.contains('active')) {
+              submitGoogleTotpVerify();
+            } else {
+              submitGoogleTotpEmail();
+            }
+            return;
+          }
+        }
+        if (!manualModal || !manualModal.classList.contains('open')) { return; }
+        var passwordStep = document.getElementById('manualLoginStepPassword');
+        if (!passwordStep || !passwordStep.classList.contains('active')) {
+          if (event.key === 'Escape') {
+            closeManualLoginModal();
+          }
+          return;
+        }
+        if (event.key === 'Escape') {
+          showManualChooseStep();
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          submitManualLoginModal();
+        }
+      });
+      {% if manual_login_error %}
+      if (orb) {
+        orb.classList.add('expanded');
+      }
+      if (manualModal) {
+        manualModal.classList.add('open');
+        showManualPasswordStep();
+      }
+      {% endif %}
+    })();
+    </script>
+
+    <!-- Media credits: per-group video attribution + music (collapsible) -->
+    <div id="media-credits" class="media-credits">
+        <button type="button" id="media-credits-btn" class="media-credits-btn" aria-expanded="false" aria-controls="media-credits-panel">
+            Credits &amp; licenses
+        </button>
+        <div id="media-credits-panel" class="media-credits-panel" role="region" aria-labelledby="media-credits-btn">
+            <div class="media-credits-box">
+                <p id="media-credits-group" class="mc-mod" style="margin:0 0 8px;color:rgba(186,230,253,0.95);font-weight:600;"></p>
+                <strong class="mc-section">Videos</strong>
+                <ul id="media-credits-videos"></ul>
+                <strong class="mc-section">Music</strong>
+                <p id="media-credits-music"></p>
+            </div>
+        </div>
+    </div>
+    <div class="tr-support-contact" role="contentinfo">
+        Support:
+        <a href="mailto:support@tracedroute.net">support@tracedroute.net</a>
+        ·
+        <a href="/static/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener noreferrer">Open source notices</a>
+    </div>
+    <audio id="welcome-music" loop preload="auto" playsinline autoplay>
+      <source src="/static/audio/miami_nights_extended_theme.mp3" type="audio/mpeg" />
+    </audio>
+    <script>
+    (function () {
+      var a = document.getElementById('welcome-music');
+      if (!a) { return; }
+      if (window.__peregrineLoginUseVideoAudio) {
+        try { a.pause(); } catch (e) {}
+        a.muted = true;
+        a.volume = 0;
+        a.removeAttribute('autoplay');
+        return;
+      }
+      a.volume = 0.38;
+      function tryPlay() { a.play().catch(function () {}); }
+      function scheduleTryPlay() {
+        tryPlay();
+        if (a.readyState < 2) {
+          a.addEventListener('canplay', tryPlay, { once: true });
+          a.addEventListener('canplaythrough', tryPlay, { once: true });
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scheduleTryPlay);
+      } else {
+        scheduleTryPlay();
+      }
+      window.addEventListener('load', tryPlay);
+      setTimeout(tryPlay, 0);
+    })();
+    </script>
+  {% include "_ecosystem_blade.html" %}
+</body>
+</html>

@@ -1,0 +1,15 @@
+{# Ecosystem left blade — same frosted sidenav as Core / Orders / Management. #}
+{% set _orders = (orders_public_url if orders_public_url is defined and orders_public_url else 'https://service.tracedroute.net') %}
+{% set _hayabusa = (hayabusa_public_url if hayabusa_public_url is defined and hayabusa_public_url else 'https://hayabusa.tracedroute.net') %}
+<script>window.__TR_SIGNED_IN__ = {{ 'true' if (user is defined and user) else 'false' }};</script>
+<link rel="stylesheet" href="/static/ecosystem/blade.css?v=20261001b" data-tr-blade-css="1" />
+<script
+  src="/static/ecosystem/blade.js?v=20261001b"
+  defer
+  data-tr-orders-origin="{{ _orders.rstrip('/') }}"
+  data-tr-orders-url="{{ _orders.rstrip('/') }}"
+  data-tr-hayabusa-url="{{ _hayabusa.rstrip('/') }}"
+  data-tr-website-url="https://tracedroute.net"
+  data-tr-support-url="{{ _orders.rstrip('/') }}/support/"
+  data-tr-staff-url="{{ _orders.rstrip('/') }}/staff/login"
+></script>

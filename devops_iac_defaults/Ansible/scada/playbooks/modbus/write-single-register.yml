@@ -1,0 +1,37 @@
+---
+- name: Modbus TCP — write single holding register (FC6)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    modbus_write_address: 0
+    modbus_write_value: 1
+    plc_payload:
+      protocol: modbus_tcp
+      host: "{{ plc_host }}"
+      port: "{{ modbus_port | int }}"
+      unit_id: "{{ modbus_unit_id | int }}"
+      write_function_code: 6
+      address: "{{ modbus_write_address | int }}"
+      value: "{{ modbus_write_value | int }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety — confirm writes are enabled in Hayabusa operator policy
+      ansible.builtin.fail:
+        msg: >-
+          Set allow_modbus_write=true to run this playbook. Requires plc_writes_enabled
+          in operator safety policy and authorized PLC write in Hayabusa.
+      when: not (allow_modbus_write | default(false) | bool)
+
+    - name: Write single holding register
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: modbus_write
+      changed_when: true
+
+    - name: Show write acknowledgement
+      ansible.builtin.debug:
+        msg: "{{ modbus_write.stdout | from_json }}"

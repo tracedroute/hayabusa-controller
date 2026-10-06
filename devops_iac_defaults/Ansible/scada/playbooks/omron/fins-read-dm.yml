@@ -1,0 +1,28 @@
+---
+- name: Omron — read DM area (FINS UDP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: omron_fins
+      host: "{{ plc_host }}"
+      port: "{{ omron_fins_port | int }}"
+      fins_area: "{{ omron_fins_area }}"
+      address: "{{ omron_fins_address | int }}"
+      count: "{{ omron_fins_count | int }}"
+      dest_node: "{{ omron_dest_node | int }}"
+      source_node: "{{ omron_source_node | int }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read DM/CIO/WR/HR/AR words via FINS
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: fins_read
+      changed_when: false
+
+    - name: Show FINS read result
+      ansible.builtin.debug:
+        msg: "{{ fins_read.stdout | from_json }}"

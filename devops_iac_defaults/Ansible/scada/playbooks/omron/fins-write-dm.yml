@@ -1,0 +1,35 @@
+---
+- name: Omron — write DM words (FINS UDP)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    omron_write_values: [100]
+    plc_payload:
+      protocol: omron_fins
+      host: "{{ plc_host }}"
+      port: "{{ omron_fins_port | int }}"
+      fins_area: "{{ omron_fins_area }}"
+      address: "{{ omron_fins_address | int }}"
+      values: "{{ omron_write_values }}"
+      dest_node: "{{ omron_dest_node | int }}"
+      source_node: "{{ omron_source_node | int }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_omron_write=true and enable plc_writes_enabled in Hayabusa operator policy.
+      when: not (allow_omron_write | default(false) | bool)
+
+    - name: Write DM words via FINS
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: fins_write
+      changed_when: true
+
+    - name: Show write result
+      ansible.builtin.debug:
+        msg: "{{ fins_write.stdout | from_json }}"

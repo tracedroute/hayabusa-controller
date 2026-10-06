@@ -1,0 +1,596 @@
+"""Site ZTP edge: DHCP (dnsmasq) + local fetch for LAN hosts.
+
+Runs on the controller appliance so PXE/DHCP stay L2-local. Hayabusa ZTP is
+not modified — this is an independent edge that can point devices at local
+recipes and/or Hayabusa HTTP fetch URLs once they have network.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import signal
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger("hayabusa-controller.ztp_edge")
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "enabled": False,
+    "interface": "",
+    "subnet": "192.168.50.0",
+    "netmask": "255.255.255.0",
+    "range_start": "192.168.50.100",
+    "range_end": "192.168.50.200",
+    "gateway": "192.168.50.1",
+    "dns": ["192.168.50.1", "1.1.1.1"],
+    "lease_hours": 12,
+    "next_server": "",
+    "boot_filename": "undionly.kpxe",
+    "enable_tftp": True,
+    "enable_pxe": True,
+    "hayabusa_ztp_fetch_base": "",
+}
+
+
+class ZtpEdge:
+    def __init__(self, data_dir: Path, *, public_base_url: str = "", devops_workspace: Path | None = None) -> None:
+        self.data_dir = Path(data_dir)
+        self.ztp_dir = self.data_dir / "ztp-edge"
+        self.config_path = self.ztp_dir / "config.json"
+        self.runtime_dir = self.ztp_dir / "runtime"
+        self.tftp_root = self.ztp_dir / "tftp"
+        self.fetch_root = self.ztp_dir / "fetch"
+        self.leases_path = self.runtime_dir / "dnsmasq.leases"
+        self.pid_path = self.runtime_dir / "dnsmasq.pid"
+        self.conf_path = self.runtime_dir / "dnsmasq.conf"
+        self.log_path = self.runtime_dir / "dnsmasq.log"
+        self.seeking_path = self.ztp_dir / "seeking.json"
+        self.public_base_url = (public_base_url or "").rstrip("/")
+        self.devops_workspace = Path(devops_workspace) if devops_workspace else None
+        self._ensure_dirs()
+
+    def _ensure_dirs(self) -> None:
+        for p in (self.ztp_dir, self.runtime_dir, self.tftp_root, self.fetch_root):
+            p.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(p, 0o700)
+            except OSError:
+                pass
+        if not self.config_path.is_file():
+            self.config_path.write_text(json.dumps(dict(DEFAULT_CONFIG), indent=2) + "\n", encoding="utf-8")
+            try:
+                os.chmod(self.config_path, 0o600)
+            except OSError:
+                pass
+        # Seed a minimal iPXE chain info file
+        info = self.tftp_root / "README.txt"
+        if not info.is_file():
+            info.write_text(
+                "Hayabusa Controller ZTP edge TFTP root.\n"
+                "Place undionly.kpxe / ipxe.efi here, or disable PXE and use DHCP-only.\n",
+                encoding="utf-8",
+            )
+
+    def load_config(self) -> dict[str, Any]:
+        self._ensure_dirs()
+        try:
+            raw = json.loads(self.config_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return dict(DEFAULT_CONFIG)
+            out = dict(DEFAULT_CONFIG)
+            out.update({k: raw[k] for k in DEFAULT_CONFIG if k in raw})
+            return out
+        except Exception:  # noqa: BLE001
+            return dict(DEFAULT_CONFIG)
+
+    def save_config(self, cfg: dict[str, Any]) -> dict[str, Any]:
+        out = dict(DEFAULT_CONFIG)
+        if isinstance(cfg, dict):
+            for k in DEFAULT_CONFIG:
+                if k in cfg:
+                    out[k] = cfg[k]
+        self.ztp_dir.mkdir(parents=True, exist_ok=True)
+        self.config_path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+        try:
+            os.chmod(self.config_path, 0o600)
+        except OSError:
+            pass
+        return out
+
+    def dnsmasq_available(self) -> bool:
+        from shutil import which
+
+        return bool(which("dnsmasq"))
+
+    def _pid(self) -> int | None:
+        try:
+            if not self.pid_path.is_file():
+                return None
+            pid = int(self.pid_path.read_text(encoding="utf-8").strip() or "0")
+            if pid <= 0:
+                return None
+            os.kill(pid, 0)
+            return pid
+        except Exception:  # noqa: BLE001
+            return None
+
+    def running(self) -> bool:
+        return self._pid() is not None
+
+    def _render_dnsmasq_conf(self, cfg: dict[str, Any]) -> str:
+        iface = str(cfg.get("interface") or "").strip()
+        dns_list = cfg.get("dns") if isinstance(cfg.get("dns"), list) else ["1.1.1.1"]
+        dns = ",".join(str(x).strip() for x in dns_list if str(x).strip()) or "1.1.1.1"
+        next_server = str(cfg.get("next_server") or "").strip()
+        if not next_server and self.public_base_url.startswith("http"):
+            # best-effort: leave blank; operator should set LAN IP of this appliance
+            next_server = ""
+        lines = [
+            "# Generated by hayabusa-controller ZTP edge — do not edit by hand",
+            "port=0",
+            "bind-interfaces",
+            f"dhcp-leasefile={self.leases_path}",
+            f"pid-file={self.pid_path}",
+            "log-dhcp",
+            f"log-facility={self.log_path}",
+            f"dhcp-range={cfg.get('range_start')},{cfg.get('range_end')},{cfg.get('netmask')},{int(cfg.get('lease_hours') or 12)}h",
+            f"dhcp-option=option:router,{cfg.get('gateway')}",
+            f"dhcp-option=option:dns-server,{dns}",
+        ]
+        if iface:
+            lines.append(f"interface={iface}")
+        else:
+            lines.append("# interface=  (unset — dnsmasq will use default routes; set interface for production)")
+        if cfg.get("enable_tftp"):
+            lines.append(f"enable-tftp")
+            lines.append(f"tftp-root={self.tftp_root}")
+        if cfg.get("enable_pxe") and next_server:
+            boot = str(cfg.get("boot_filename") or "undionly.kpxe").strip() or "undionly.kpxe"
+            lines.append(f"dhcp-boot={boot},{next_server}")
+            lines.append(f"dhcp-option=66,{next_server}")
+        # Vendor class hooks can be extended later; keep edge simple and safe.
+        return "\n".join(lines) + "\n"
+
+    def start(self) -> dict[str, Any]:
+        if not self.dnsmasq_available():
+            return {"ok": False, "error": "dnsmasq not installed on controller"}
+        cfg = self.load_config()
+        if self.running():
+            return {"ok": True, "already_running": True, "pid": self._pid(), "config": cfg}
+        self._ensure_dirs()
+        conf = self._render_dnsmasq_conf(cfg)
+        self.conf_path.write_text(conf, encoding="utf-8")
+        err_path = self.runtime_dir / "dnsmasq.stderr"
+        try:
+            err_fh = open(err_path, "wb")
+            proc = subprocess.Popen(
+                ["dnsmasq", "--conf-file=" + str(self.conf_path), "--keep-in-foreground"],
+                stdout=subprocess.DEVNULL,
+                stderr=err_fh,
+                start_new_session=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)[:300]}
+        time.sleep(0.5)
+        try:
+            err_fh.close()
+        except Exception:  # noqa: BLE001
+            pass
+        if proc.poll() is not None:
+            detail = ""
+            try:
+                detail = err_path.read_text(encoding="utf-8", errors="replace")[-500:]
+            except Exception:  # noqa: BLE001
+                detail = ""
+            return {
+                "ok": False,
+                "error": "dnsmasq exited immediately — check interface/ports (UDP 67)",
+                "detail": detail,
+                "hint": "Set config.interface to the LAN NIC and ensure nothing else binds UDP 67.",
+            }
+        if not self.pid_path.is_file():
+            self.pid_path.write_text(str(proc.pid), encoding="utf-8")
+        cfg["enabled"] = True
+        self.save_config(cfg)
+        return {"ok": True, "pid": self._pid() or proc.pid, "config": cfg}
+
+    def stop(self) -> dict[str, Any]:
+        pid = self._pid()
+        if pid:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.3)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            if self.pid_path.is_file():
+                self.pid_path.unlink()
+        except OSError:
+            pass
+        cfg = self.load_config()
+        cfg["enabled"] = False
+        self.save_config(cfg)
+        return {"ok": True, "stopped": True}
+
+    def leases(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        hints = self._vendor_hints_by_mac()
+        if not self.leases_path.is_file():
+            return out
+        try:
+            text = self.leases_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return out
+        for line in text.splitlines():
+            parts = line.split()
+            # expiry mac ip hostname client-id
+            if len(parts) < 4:
+                continue
+            mac = parts[1]
+            hint = hints.get(self._norm_mac(mac), {})
+            out.append(
+                {
+                    "expiry": parts[0],
+                    "mac": mac,
+                    "ip": parts[2],
+                    "hostname": parts[3] if parts[3] != "*" else "",
+                    "vendor_class": str(hint.get("vendor_class") or ""),
+                    "user_class": str(hint.get("user_class") or ""),
+                    "dhcp_vendor_class": str(hint.get("vendor_class") or ""),
+                    "dhcp_user_class": str(hint.get("user_class") or ""),
+                }
+            )
+        return out
+
+    @staticmethod
+    def _norm_mac(mac: str) -> str:
+        hx = "".join(c for c in str(mac or "") if c.isalnum())
+        if len(hx) != 12:
+            return str(mac or "").strip().lower()
+        return ":".join(hx[i : i + 2] for i in range(0, 12, 2)).lower()
+
+    def _vendor_hints_by_mac(self) -> dict[str, dict[str, str]]:
+        """Best-effort DHCP option 60/77 hints from dnsmasq log."""
+        out: dict[str, dict[str, str]] = {}
+        for path in (self.log_path, self.runtime_dir / "dnsmasq.stderr"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            lines = text.splitlines()[-400:]
+            current_mac = ""
+            for line in lines:
+                low = line.lower()
+                # DHCPDISCOVER(ens18) bc:24:11:9a:83:01
+                m = re.search(r"([0-9a-f]{2}(?::[0-9a-f]{2}){5})", low)
+                if m and ("discover" in low or "request" in low or "offer" in low or "ack" in low):
+                    current_mac = self._norm_mac(m.group(1))
+                    out.setdefault(current_mac, {})
+                if not current_mac:
+                    continue
+                # vendor class / user class lines vary by dnsmasq version
+                vc = re.search(r"vendor class:?\s*[\"']?([^\"'\n]+)", line, re.I)
+                if vc:
+                    out.setdefault(current_mac, {})["vendor_class"] = vc.group(1).strip()[:120]
+                uc = re.search(r"user class:?\s*[\"']?([^\"'\n]+)", line, re.I)
+                if uc:
+                    out.setdefault(current_mac, {})["user_class"] = uc.group(1).strip()[:120]
+                # dnsmasq sometimes logs: client provides vendor class: PXEClient
+                if "vendor class" in low and "=" in line:
+                    frag = line.split("vendor class", 1)[-1]
+                    frag = frag.split(":", 1)[-1].strip().strip("'\"")
+                    if frag:
+                        out.setdefault(current_mac, {})["vendor_class"] = frag[:120]
+        return out
+
+    def dhcp_events(self, *, limit: int = 80) -> list[dict[str, Any]]:
+        """Recent DHCP DISCOVER/REQUEST lines for Fleet dhcp-requests."""
+        events: list[dict[str, Any]] = []
+        hints = self._vendor_hints_by_mac()
+        for path in (self.log_path, self.runtime_dir / "dnsmasq.stderr"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for line in text.splitlines()[-300:]:
+                low = line.lower()
+                if "dhcpdiscover" in low:
+                    etype = "DISCOVER"
+                elif "dhcprequest" in low:
+                    etype = "REQUEST"
+                else:
+                    continue
+                m = re.search(r"([0-9a-f]{2}(?::[0-9a-f]{2}){5})", low)
+                if not m:
+                    continue
+                mac = self._norm_mac(m.group(1))
+                hint = hints.get(mac, {})
+                events.append(
+                    {
+                        "mac": mac,
+                        "type": etype,
+                        "hostname": "",
+                        "vendor_class": str(hint.get("vendor_class") or ""),
+                        "user_class": str(hint.get("user_class") or ""),
+                        "timestamp": "Just now",
+                    }
+                )
+        # de-dupe preserving order (last wins visually near end)
+        seen: set[str] = set()
+        out: list[dict[str, Any]] = []
+        for ev in reversed(events):
+            key = f"{ev.get('mac')}:{ev.get('type')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(ev)
+            if len(out) >= max(1, int(limit or 80)):
+                break
+        out.reverse()
+        return out
+
+    def seeking_records(self) -> list[dict[str, Any]]:
+        self._ensure_dirs()
+        if not self.seeking_path.is_file():
+            return []
+        try:
+            raw = json.loads(self.seeking_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return []
+        if isinstance(raw, list):
+            return [r for r in raw if isinstance(r, dict)]
+        if isinstance(raw, dict) and isinstance(raw.get("records"), list):
+            return [r for r in raw["records"] if isinstance(r, dict)]
+        return []
+
+    def record_fetch(
+        self,
+        *,
+        path: str,
+        found: bool,
+        client_ip: str = "",
+        mac: str = "",
+    ) -> dict[str, Any]:
+        """Record a /ztp/fetch hit so Core Incoming can treat the host as seeking config."""
+        self._ensure_dirs()
+        rel = (path or "").strip().lstrip("/")
+        now = int(time.time())
+        records = self.seeking_records()
+        key_ip = (client_ip or "").strip()
+        key_mac = self._norm_mac(mac) if mac else ""
+        matched: dict[str, Any] | None = None
+        for rec in records:
+            if key_mac and self._norm_mac(str(rec.get("mac") or "")) == key_mac:
+                matched = rec
+                break
+            if key_ip and str(rec.get("ip") or "").strip() == key_ip:
+                matched = rec
+                break
+        if matched is None:
+            matched = {
+                "ip": key_ip,
+                "mac": key_mac,
+                "path": rel,
+                "dispatch_path": rel,
+                "ztp_dispatch_path": rel,
+                "hits": 0,
+                "status": "seeking_config",
+                "config_outcome": "",
+                "first_seen": now,
+            }
+            records.append(matched)
+        matched["path"] = rel
+        matched["dispatch_path"] = rel
+        matched["ztp_dispatch_path"] = rel
+        matched["hits"] = int(matched.get("hits") or 0) + 1
+        matched["ztp_fetch_hits"] = matched["hits"]
+        matched["last_seen"] = now
+        if key_ip:
+            matched["ip"] = key_ip
+        if key_mac:
+            matched["mac"] = key_mac
+        if found:
+            matched["status"] = "seeking_config"
+            matched["config_status"] = "awaiting_full_config"
+            matched["config_status_label"] = "Seeking configuration"
+            # A successful fetch of a dispatch script means the host is calling for config;
+            # do not mark delivered here — operator Claim/provision completes that.
+            if not matched.get("config_outcome"):
+                matched["config_outcome"] = ""
+        else:
+            matched["status"] = "config_rejected"
+            matched["config_outcome"] = "rejected"
+            matched["config_status"] = "config_rejected"
+            matched["config_status_label"] = "Config missing / rejected"
+        # Keep a bounded journal
+        records = records[-200:]
+        try:
+            self.seeking_path.write_text(json.dumps({"records": records}, indent=2) + "\n", encoding="utf-8")
+            os.chmod(self.seeking_path, 0o600)
+        except OSError:
+            pass
+        return matched
+
+    def status(self) -> dict[str, Any]:
+        cfg = self.load_config()
+        return {
+            "ok": True,
+            "dnsmasq_installed": self.dnsmasq_available(),
+            "running": self.running(),
+            "pid": self._pid(),
+            "enabled": bool(cfg.get("enabled")),
+            "config": cfg,
+            "leases": self.leases(),
+            "lease_count": len(self.leases()),
+            "tftp_root": str(self.tftp_root),
+            "fetch_root": str(self.fetch_root),
+            "public_base_url": self.public_base_url,
+            "hayabusa_ztp_untouched": True,
+            "note": (
+                "DHCP/PXE run on this controller's LAN and relay eligible hosts to Hayabusa Core Fleet. "
+                "Core hub DHCP stays disabled."
+            ),
+        }
+
+    def resolve_fetch_file(self, rel: str) -> Path | None:
+        """Resolve a fetch path under fetch_root or devops ztp trees (no escape)."""
+        rel = (rel or "").strip().lstrip("/")
+        if not rel:
+            return None
+        parts = [p for p in rel.replace("\\", "/").split("/") if p and p != "."]
+        if any(p == ".." for p in parts):
+            return None
+        safe = "/".join(parts)
+        candidates: list[Path] = [self.fetch_root / safe]
+        if self.devops_workspace:
+            # Prefer Hayabusa master paths under Ansible/; keep legacy top-level as fallback.
+            candidates.extend(
+                [
+                    self.devops_workspace / "Ansible" / "ztp" / safe,
+                    self.devops_workspace / "Ansible" / "bare-metal-ztp" / safe,
+                    self.devops_workspace / "Ansible" / "OpenTofu" / "ztp" / safe,
+                    self.devops_workspace / "ztp" / safe,
+                    self.devops_workspace / "bare-metal-ztp" / safe,
+                    self.devops_workspace / "OpenTofu" / "ztp" / safe,
+                ]
+            )
+        roots: list[Path] = []
+        try:
+            roots.append(self.fetch_root.resolve())
+        except Exception:  # noqa: BLE001
+            return None
+        if self.devops_workspace:
+            try:
+                roots.append(self.devops_workspace.resolve())
+            except Exception:  # noqa: BLE001
+                pass
+        for c in candidates:
+            try:
+                resolved = c.resolve(strict=False)
+            except Exception:  # noqa: BLE001
+                continue
+            if not resolved.is_file():
+                continue
+            for root in roots:
+                try:
+                    resolved.relative_to(root)
+                except ValueError:
+                    continue
+                return resolved
+        return None
+
+    def list_recipes(self) -> dict[str, Any]:
+        """Discover vendor ZTP dispatch scripts and bare-metal recipe dirs in the workspace."""
+        vendor: list[dict[str, Any]] = []
+        bare: list[dict[str, Any]] = []
+        roots: list[Path] = []
+        if self.devops_workspace:
+            roots.extend(
+                [
+                    self.devops_workspace / "Ansible" / "ztp",
+                    self.devops_workspace / "ztp",
+                    self.devops_workspace / "Ansible" / "OpenTofu" / "ztp",
+                    self.devops_workspace / "Ansible" / "OpenTofu" / "vendor-ztp",
+                ]
+            )
+        roots.append(self.fetch_root)
+        seen_v: set[str] = set()
+        for root in roots:
+            if not root.is_dir():
+                continue
+            try:
+                for vendor_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+                    vname = vendor_dir.name.strip()
+                    if not vname or vname.startswith("."):
+                        continue
+                    for f in sorted(vendor_dir.rglob("*")):
+                        if not f.is_file():
+                            continue
+                        if f.name.startswith(".") or f.name.startswith("__"):
+                            continue
+                        if f.suffix.lower() in {".md", ".txt", ".bak", ".backup", ".pyc", ".py"}:
+                            continue
+                        rel = f.relative_to(root).as_posix()
+                        rid = rel
+                        if rid in seen_v:
+                            continue
+                        seen_v.add(rid)
+                        vendor.append(
+                            {
+                                "id": rid,
+                                "name": f"ZTP · {vname} / {f.name}",
+                                "vendor": vname,
+                                "path": rel,
+                                "kind": "vendor_ztp",
+                            }
+                        )
+            except OSError:
+                continue
+
+        bm_roots: list[Path] = []
+        if self.devops_workspace:
+            bm_roots.extend(
+                [
+                    self.devops_workspace / "Ansible" / "bare-metal-ztp" / "recipes",
+                    self.devops_workspace / "bare-metal-ztp" / "recipes",
+                ]
+            )
+        seen_b: set[str] = set()
+        for root in bm_roots:
+            if not root.is_dir():
+                continue
+            try:
+                for child in sorted(root.iterdir()):
+                    if child.name.startswith("."):
+                        continue
+                    rid = child.name
+                    if child.is_file() and child.suffix.lower() == ".json":
+                        rid = child.stem
+                        # optional metadata
+                        name = rid
+                        try:
+                            meta = json.loads(child.read_text(encoding="utf-8"))
+                            if isinstance(meta, dict) and meta.get("name"):
+                                name = str(meta.get("name"))
+                                rid = str(meta.get("id") or rid)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    elif child.is_dir():
+                        name = rid.replace("-", " ").title()
+                    else:
+                        continue
+                    if rid in seen_b:
+                        continue
+                    seen_b.add(rid)
+                    bare.append(
+                        {
+                            "id": rid,
+                            "name": name,
+                            "category": "bare_metal",
+                            "kind": "bare_metal",
+                            "path": str(child.relative_to(root.parent).as_posix())
+                            if self.devops_workspace
+                            else rid,
+                        }
+                    )
+            except OSError:
+                continue
+        return {
+            "vendor_ztp": vendor,
+            "bare_metal": bare,
+            "vendor_count": len(vendor),
+            "bare_metal_count": len(bare),
+        }

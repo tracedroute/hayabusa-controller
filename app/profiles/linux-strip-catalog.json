@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "description": "Recommended Linux package globs. Image Nest inventories the ISO first and only strips packages that are actually present.",
+  "category_order": ["Office", "Games", "Media", "Desktop extras", "Docs", "Firmware"],
+  "presets": [
+    {
+      "id": "recommended",
+      "label": "Recommended",
+      "description": "Common desktop bloat when present on the ISO",
+      "use_defaults": true
+    },
+    {
+      "id": "remove-all-recommended",
+      "label": "All recommended",
+      "description": "Every catalog pattern that matches inventoried packages",
+      "option_ids": ["*"]
+    },
+    {
+      "id": "none",
+      "label": "Keep everything",
+      "description": "Bank ISO without package deletes",
+      "option_ids": []
+    }
+  ],
+  "options": [
+    {
+      "id": "libreoffice",
+      "label": "LibreOffice suite",
+      "category": "Office",
+      "description": "Writer/Calc/Impress and related packages",
+      "package_glob": "libreoffice*",
+      "default_enabled": true
+    },
+    {
+      "id": "thunderbird",
+      "label": "Thunderbird",
+      "category": "Office",
+      "description": "Mozilla Thunderbird mail client",
+      "package_glob": "thunderbird*",
+      "default_enabled": true
+    },
+    {
+      "id": "gnome-games",
+      "label": "GNOME games",
+      "category": "Games",
+      "description": "GNOME game packages",
+      "package_glob": "gnome-games*",
+      "default_enabled": true
+    },
+    {
+      "id": "aisleriot",
+      "label": "AisleRiot",
+      "category": "Games",
+      "description": "Solitaire game",
+      "package_glob": "aisleriot*",
+      "default_enabled": true
+    },
+    {
+      "id": "gnome-mahjongg",
+      "label": "Mahjongg",
+      "category": "Games",
+      "description": "GNOME Mahjongg",
+      "package_glob": "gnome-mahjongg*",
+      "default_enabled": true
+    },
+    {
+      "id": "rhythmbox",
+      "label": "Rhythmbox",
+      "category": "Media",
+      "description": "Music player",
+      "package_glob": "rhythmbox*",
+      "default_enabled": true
+    },
+    {
+      "id": "totem",
+      "label": "Totem / Videos",
+      "category": "Media",
+      "description": "GNOME Videos player",
+      "package_glob": "totem*",
+      "default_enabled": false
+    },
+    {
+      "id": "cheese",
+      "label": "Cheese",
+      "category": "Media",
+      "description": "Webcam booth",
+      "package_glob": "cheese*",
+      "default_enabled": true
+    },
+    {
+      "id": "shotwell",
+      "label": "Shotwell",
+      "category": "Media",
+      "description": "Photo manager",
+      "package_glob": "shotwell*",
+      "default_enabled": true
+    },
+    {
+      "id": "remmina",
+      "label": "Remmina",
+      "category": "Desktop extras",
+      "description": "Remote desktop client",
+      "package_glob": "remmina*",
+      "default_enabled": false
+    },
+    {
+      "id": "transmission",
+      "label": "Transmission",
+      "category": "Desktop extras",
+      "description": "BitTorrent client",
+      "package_glob": "transmission*",
+      "default_enabled": true
+    },
+    {
+      "id": "ubuntu-docs",
+      "label": "Ubuntu docs",
+      "category": "Docs",
+      "description": "Documentation packages",
+      "package_glob": "ubuntu-docs*",
+      "default_enabled": true
+    },
+    {
+      "id": "gnome-user-docs",
+      "label": "GNOME user docs",
+      "category": "Docs",
+      "description": "GNOME documentation",
+      "package_glob": "gnome-user-docs*",
+      "default_enabled": true
+    },
+    {
+      "id": "firmware-sof",
+      "label": "SOF firmware (optional)",
+      "category": "Firmware",
+      "description": "Sound Open Firmware blobs (only if present)",
+      "package_glob": "firmware-sof*",
+      "default_enabled": false
+    }
+  ]
+}

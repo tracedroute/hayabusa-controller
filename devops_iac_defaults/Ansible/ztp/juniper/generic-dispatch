@@ -1,0 +1,18 @@
+#!/bin/sh
+cat > /tmp/peregrine-ztp.set <<'EOF'
+set system host-name Juniper-Junos
+set system root-authentication encrypted-password "$1$ZeJlM56K$OaOnIeOMnrBQxJ3jZC0O20"
+set system services ssh
+set system services netconf ssh port 830
+set system syslog host 192.168.2.1 interactive-commands notice
+EOF
+CLI=/usr/sbin/cli
+if [ ! -x "$CLI" ]; then
+    CLI=cli
+fi
+"$CLI" <<'EOF'
+configure
+load set /tmp/peregrine-ztp.set
+commit and-quit
+EOF
+exit 0

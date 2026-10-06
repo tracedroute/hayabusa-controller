@@ -1,0 +1,49 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: Compliance helpers — supervisory signal / inspection export (gated)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    compliance_export_dir: "{{ lookup('env', 'SECURITY_COMPLIANCE_DIR') | default('/tmp/hayabusa-security-compliance', true) }}"
+    compliance_allow_export: "{{ lookup('env', 'SECURITY_COMPLIANCE_ALLOW_EXPORT') | default('false', true) | bool }}"
+    inspection_note: "{{ lookup('env', 'SECURITY_INSPECTION_NOTE') | default('Weekly supervisory signal review', true) }}"
+  tasks:
+    - name: Explain gated compliance workflow
+      ansible.builtin.debug:
+        msg:
+          - "This playbook does not trip bells or silence panels."
+          - "It writes a local inspection checklist export when explicitly allowed."
+          - "Set SECURITY_COMPLIANCE_ALLOW_EXPORT=true to create the export file."
+
+    - name: Create export directory when allowed
+      ansible.builtin.file:
+        path: "{{ compliance_export_dir }}"
+        state: directory
+        mode: "0700"
+      when: compliance_allow_export | bool
+
+    - name: Write inspection checklist stub
+      ansible.builtin.copy:
+        dest: "{{ compliance_export_dir }}/inspection-checklist.json"
+        mode: "0600"
+        content: |
+          {
+            "note": {{ inspection_note | to_json }},
+            "checks": [
+              "Verify AC power supervisory",
+              "Verify battery supervisory",
+              "Verify ground-fault supervisory",
+              "Verify phone-line / IP communicator path",
+              "Verify sprinkler tamper/flow supervisory (if present)",
+              "Document AHJ witness if required"
+            ],
+            "commands_executed": [],
+            "warning": "No life-safety outputs were commanded by Hayabusa."
+          }
+      when: compliance_allow_export | bool
+
+    - name: Show export path
+      ansible.builtin.debug:
+        msg: "Wrote {{ compliance_export_dir }}/inspection-checklist.json"
+      when: compliance_allow_export | bool

@@ -1,0 +1,44 @@
+{
+  "device_type": "switch",
+  "vendor": "cisco",
+  "config_template": "ios-xe",
+  "configuration": {
+    "hostname": "c9500-ztp",
+    "interfaces": [
+      {
+        "name": "Vlan1",
+        "ip": "dhcp",
+        "description": "Management"
+      },
+      {
+        "name": "TenGigabitEthernet1/0/1",
+        "description": "Uplink Port 1",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      },
+      {
+        "name": "TenGigabitEthernet1/0/2",
+        "description": "Uplink Port 2",
+        "switchport_mode": "access",
+        "access_vlan": 1,
+        "required": false
+      }
+    ],
+    "static_routes": [],
+    "default_gateway": "192.168.2.1",
+    "services": {
+      "ssh": {
+        "enabled": true,
+        "version": 2
+      },
+      "ntp": {
+        "enabled": true,
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hayabusa Controller Node</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/controller.css" />
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="alternate icon" href="/favicon.ico" />
+</head>
+<body class="app-shell">
+  <header class="app-nav">
+    <div class="app-brand">
+      <p class="app-brand-mark">Hayabusa Controller Node</p>
+      <p class="app-brand-sub">
+        {{ user.email or user.username }} · {{ user.provider }}
+      </p>
+      <p class="app-brand-gitops" id="gitopsNavHint"{% if not gitops_enabled %} hidden{% endif %}>{% if gitops_enabled %}Connected to {{ gitops_provider_label }}{% if gitops_nav_url %} · <a href="{{ gitops_nav_url }}" target="_blank" rel="noopener noreferrer">{{ gitops_nav_url }}</a>{% endif %}{% endif %}</p>
+    </div>
+    <div class="app-nav-actions">
+      {% if is_owner_or_admin %}
+      <a class="btn btn-ghost" href="/administration">Administration</a>
+      {% endif %}
+      <a class="btn btn-ghost" href="/image-nest">Image Nest</a>
+      <a class="btn btn-ghost" href="/devops-iac">Workspace</a>
+      <a class="btn btn-ghost" href="/static/THIRD-PARTY-NOTICES.txt" target="_blank" rel="noopener noreferrer" title="Open source and third-party notices">Notices</a>
+      <a class="btn btn-secondary" href="{{ hayabusa_public_url }}" target="_blank" rel="noopener">Open Hayabusa</a>
+      <a class="btn btn-primary" href="/logout">Sign out</a>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="hero">
+      <h1 id="pageTitle">Overview</h1>
+      <p class="hero-lead" id="pageLead">
+        This node phones home to Hayabusa, joins its mesh privately, and keeps site services on the local LAN.
+      </p>
+    </section>
+
+    <nav class="page-tabs" aria-label="Controller sections" id="pageTabs">
+      <button type="button" class="page-tab is-active" data-tab="overview">Overview</button>
+      <button type="button" class="page-tab" data-tab="connection">Connection</button>
+      <button type="button" class="page-tab" data-tab="jobs">Job approvals</button>
+      <button type="button" class="page-tab" data-tab="blueprints">Gameplan &amp; Blueprints</button>
+      <button type="button" class="page-tab" data-tab="integrations">Integrations</button>
+      <button type="button" class="page-tab" data-tab="backups">Backup jobs</button>
+      <button type="button" class="page-tab" data-tab="access">Access</button>
+      <button type="button" class="page-tab" data-tab="ztp">ZTP &amp; DHCP</button>
+      <button type="button" class="page-tab" data-tab="secrets">Secrets</button>
+      <button type="button" class="page-tab" data-tab="gitops">GitOps</button>
+      <button type="button" class="page-tab" data-tab="tools">Tools</button>
+    </nav>
+
+    <!-- OVERVIEW -->
+    <div class="tab-panel is-active" data-panel="overview" id="panel-overview">
+      <div class="status-strip" aria-label="Live status">
+        <article class="status-tile">
+          <p class="label">Enrollment</p>
+          <p class="value" id="enrollOkLabel">—</p>
+        </article>
+        <article class="status-tile">
+          <p class="label">Public IP</p>
+          <p class="value" id="publicIpLabel">{{ public_ip or '—' }}</p>
+        </article>
+        <article class="status-tile">
+          <p class="label">Mesh VPN</p>
+          <p class="value" id="vpnIpLabel">{% if vpn.connected %}{{ vpn.ip or 'Mesh up' }}{% else %}Not connected{% endif %}</p>
+        </article>
+        <article class="status-tile">
+          <p class="label">Control bridge</p>
+          <p class="value" id="brGrantLabel">{{ 'Granted' if bridge.granted else 'Standby' }}</p>
+        </article>
+        <article class="status-tile">
+          <p class="label">DHCP</p>
+          <p class="value" id="ztpOverviewLabel">—</p>
+        </article>
+      </div>
+
+      <div class="overview-grid">
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Hayabusa link</h2>
+              <p class="section-desc">Enroll, mesh, and live control channel.</p>
+            </div>
+            <span class="pill pill-idle" id="enrollPill">Checking</span>
+          </div>
+          <dl class="kv">
+            <dt>Introducer</dt><dd id="introducerUrl">{{ hayabusa_public_url }}</dd>
+            <dt>Public IP</dt><dd id="publicIpOverview">{{ public_ip or '—' }}</dd>
+            <dt>VPN IP</dt><dd id="vpnIpOverview">{{ vpn.ip or '—' }}</dd>
+            <dt>Bridge</dt><dd id="brOverview">{{ 'Granted' if bridge.granted else 'Standby' }}</dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <button type="button" class="btn btn-secondary" data-goto="connection">Manage connection</button>
+          </div>
+        </article>
+
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Site ZTP &amp; DHCP</h2>
+              <p class="section-desc">Hand out addresses and config to local hosts.</p>
+            </div>
+            <span class="pill pill-idle" id="ztpPillMini">ZTP</span>
+          </div>
+          <dl class="kv">
+            <dt>Running</dt><dd id="ztpRunOverview">—</dd>
+            <dt>Leases</dt><dd id="ztpLeasesOverview">0</dd>
+            <dt>Fetch</dt><dd><code class="inline-code">/ztp/fetch/…</code></dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <button type="button" class="btn btn-primary" data-goto="ztp">Open ZTP &amp; DHCP</button>
+          </div>
+        </article>
+
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Secrets &amp; workspace</h2>
+              <p class="section-desc">Vault and playbooks stay here; Hayabusa requests runs, this node hydrates secrets after LAN approve.</p>
+            </div>
+          </div>
+          <dl class="kv">
+            <dt>Secrets</dt><dd><span id="secCount">{{ secrets['count'] }}</span> stored</dd>
+            <dt>Pending jobs</dt><dd id="pendingJobsOverview">—</dd>
+            <dt>RPC</dt><dd id="rpcOverview">—</dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <button type="button" class="btn btn-primary" data-goto="jobs">Job approvals</button>
+            <button type="button" class="btn btn-ghost" data-goto="secrets">Secrets</button>
+            <a class="btn btn-secondary" href="/devops-iac">Workspace</a>
+          </div>
+        </article>
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Image Nest</h2>
+              <p class="section-desc">User-supplied Windows ISOs → dated bank, manifests, strip/full bake on this node.</p>
+            </div>
+          </div>
+          <dl class="kv">
+            <dt>Legal</dt><dd>You provide the ISO — we never distribute Windows media</dd>
+            <dt>Bank</dt><dd>Dated qcow2 / catalog under <code>image-nest/</code></dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <a class="btn btn-primary" href="/image-nest">Open Image Nest</a>
+          </div>
+        </article>
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Gameplan &amp; Blueprints</h2>
+              <p class="section-desc">Visual Creation → Configuration → Security graphs saved from Hayabusa Foundry. This controller is the source of truth.</p>
+            </div>
+          </div>
+          <dl class="kv">
+            <dt>Stored</dt><dd><span id="gameplanCountOverview">—</span> blueprints</dd>
+            <dt>Edit</dt><dd>Hayabusa · Foundry · Gameplan &amp; Blueprints</dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <button type="button" class="btn btn-primary" data-goto="blueprints">Open Gameplan &amp; Blueprints</button>
+            <a class="btn btn-secondary" href="{{ hayabusa_public_url }}/gameplan" target="_blank" rel="noopener">Open on Hayabusa</a>
+          </div>
+        </article>
+        <article class="section overview-card">
+          <div class="section-head">
+            <div>
+              <h2>Integrations</h2>
+              <p class="section-desc">Webhooks, builder apps, and automation jobs synced from Hayabusa when this controller branch is selected.</p>
+            </div>
+          </div>
+          <dl class="kv">
+            <dt>Webhooks</dt><dd><span id="igWebhookCountOverview">—</span></dd>
+            <dt>Builder apps</dt><dd><span id="igAppCountOverview">—</span></dd>
+            <dt>Automation</dt><dd><span id="igJobCountOverview">—</span></dd>
+          </dl>
+          <div class="row" style="margin-top:1.1rem;">
+            <button type="button" class="btn btn-primary" data-goto="integrations">Open Integrations</button>
+            <a class="btn btn-secondary" href="{{ hayabusa_public_url }}/integrations" target="_blank" rel="noopener">Open on Hayabusa</a>
+          </div>
+        </article>
+      </div>
+    </div>
+    <div class="tab-panel" data-panel="jobs" id="panel-jobs" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Pending Hayabusa jobs</h2>
+              <p class="section-desc">
+                Ansible / OpenTofu / SECops playbooks queue here for LAN approval.
+                After approve, Hayabusa executes and reports stdout/stderr back to this controller.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="jobsRefreshBtn">Refresh</button>
+          </div>
+          <ul class="secret-list" id="pendingJobsList">
+            <li class="empty">Loading…</li>
+          </ul>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Job results</h2>
+              <p class="section-desc">
+                Completed and failed runs (including SECops Ansible under <code>Ansible/Security/</code>).
+                Expand a row to view redacted stdout/stderr stored on this controller.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="jobResultsRefreshBtn">Refresh results</button>
+          </div>
+          <ul class="secret-list" id="jobResultsList">
+            <li class="empty">Loading…</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+
+    <!-- GAMEPLAN BLUEPRINTS -->
+    <div class="tab-panel" data-panel="blueprints" id="panel-blueprints" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Saved Gameplan &amp; Blueprints</h2>
+              <p class="section-desc">
+                Graphs authored in Hayabusa Foundry → Gameplan &amp; Blueprints are stored on this controller
+                (not inside Ansible/ or OpenTofu/). Open Hayabusa to edit the canvas; delete here to revoke a saved plan.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="gameplanRefreshBtn">Refresh</button>
+          </div>
+          <ul class="secret-list" id="gameplanList">
+            <li class="empty">Loading…</li>
+          </ul>
+          <pre id="gameplanPreview" class="inline-code" style="display:none;margin-top:1rem;padding:1rem;max-height:18rem;overflow:auto;white-space:pre-wrap;font-size:0.78rem;"></pre>
+        </section>
+      </div>
+    </div>
+
+    <!-- INTEGRATIONS (webhooks / builder / automation) -->
+    <div class="tab-panel" data-panel="integrations" id="panel-integrations" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Integrations on this controller</h2>
+              <p class="section-desc">
+                Synced from Hayabusa Forge → Integrations when this branch is selected.
+                Webhook URLs stay masked here; edit and test on Hayabusa. Delete removes the copy stored on this node.
+              </p>
+            </div>
+            <div class="row" style="gap:0.5rem;flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary" id="igRefreshBtn">Refresh</button>
+              <a class="btn btn-primary" href="{{ hayabusa_public_url }}/integrations" target="_blank" rel="noopener">Open on Hayabusa</a>
+            </div>
+          </div>
+          <p class="section-desc" id="igSyncMeta">Loading…</p>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Webhook library</h2>
+              <p class="section-desc">Saved Discord / Teams / Slack / Google webhook projects.</p>
+            </div>
+          </div>
+          <ul class="secret-list" id="igWebhookList"><li class="empty">Loading…</li></ul>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Platform webhook configs</h2>
+              <p class="section-desc">Active webhook URL bindings per chat platform.</p>
+            </div>
+          </div>
+          <ul class="secret-list" id="igPlatformList"><li class="empty">Loading…</li></ul>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Builder applications</h2>
+              <p class="section-desc">Custom app / bot definitions from the Integrations builder.</p>
+            </div>
+          </div>
+          <ul class="secret-list" id="igAppList"><li class="empty">Loading…</li></ul>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Automation jobs</h2>
+              <p class="section-desc">Scheduled DevOps commands synced with this controller branch.</p>
+            </div>
+          </div>
+          <ul class="secret-list" id="igJobList"><li class="empty">Loading…</li></ul>
+        </section>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-panel="backups" id="panel-backups" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Networks &amp; hosts</h2>
+              <p class="section-desc">
+                LAN inventory on this controller. Pick a source and destination host for Ansible backups.
+                Jobs are stored here and also appear in Hayabusa Core when this controller branch is selected.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="backupNetRefreshBtn">Refresh networks</button>
+          </div>
+          <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <input id="backupNetSearch" type="search" placeholder="Search IP / hostname" style="flex:1;min-width:180px;padding:0.5rem 0.7rem;" />
+            <span class="muted" id="backupNetStatus">Loading…</span>
+          </div>
+          <div class="row" style="gap:1rem;align-items:stretch;flex-wrap:wrap;">
+            <ul class="secret-list" id="backupNetList" style="flex:1;min-width:220px;max-height:280px;overflow:auto;"></ul>
+            <ul class="secret-list" id="backupHostList" style="flex:1;min-width:220px;max-height:280px;overflow:auto;"></ul>
+          </div>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Backup jobs</h2>
+              <p class="section-desc">
+                Create scheduled or manual host-to-host backups. Run now queues a job for LAN approval
+                (same queue as Job approvals), then Hayabusa executes.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="backupJobsRefreshBtn">Refresh jobs</button>
+          </div>
+          <div class="row" style="gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <label style="flex:1;min-width:160px;">Name<input id="backupJobName" type="text" placeholder="Nightly config backup" /></label>
+            <label style="flex:1;min-width:140px;">Source<input id="backupJobSource" type="text" readonly placeholder="Select host" /></label>
+            <label style="flex:1;min-width:140px;">Destination<input id="backupJobDest" type="text" readonly placeholder="Select host" /></label>
+            <label>Schedule
+              <select id="backupJobSchedule">
+                <option value="manual">Manual</option>
+                <option value="hourly">Hourly</option>
+                <option value="daily" selected>Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </label>
+            <label style="flex:1;min-width:160px;">Dest path<input id="backupJobDestPath" type="text" value="/var/backups/hayabusa" /></label>
+            <label style="flex:2;min-width:200px;">Paths<input id="backupJobPaths" type="text" value="/etc /var/log" /></label>
+          </div>
+          <div class="row" style="gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+            <button type="button" class="btn btn-secondary" id="backupUseSourceBtn">Use selected as source</button>
+            <button type="button" class="btn btn-secondary" id="backupUseDestBtn">Use selected as destination</button>
+            <button type="button" class="btn btn-primary" id="backupCreateBtn">Create backup job</button>
+          </div>
+          <p class="section-desc" id="backupFormStatus"></p>
+          <ul class="secret-list" id="backupJobsList">
+            <li class="empty">Loading…</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+
+    <!-- ACCESS: personal permissions + sync (RBAC admin lives on /administration) -->
+    <div class="tab-panel" data-panel="access" id="panel-access" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Your access</h2>
+              <p class="section-desc">
+                Permissions granted by your roles on this controller. Owners and admins manage roles on the
+                <a href="/administration">Administration</a> page.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="accessRefreshBtn">Refresh</button>
+          </div>
+          <p class="section-desc" id="accessMe">—</p>
+          <div class="row" style="margin-top:0.8rem;gap:0.5rem;flex-wrap:wrap;">
+            <button type="button" class="btn btn-primary" id="syncHayabusaBtn">Sync my playbooks to Hayabusa</button>
+            {% if is_owner_or_admin %}
+            <a class="btn btn-secondary" href="/administration">Open Administration</a>
+            {% endif %}
+          </div>
+          <p class="section-desc" id="syncHayabusaStatus" style="margin-top:0.6rem;"></p>
+        </section>
+      </div>
+    </div>
+
+    <!-- CONNECTION -->
+    <div class="tab-panel" data-panel="connection" id="panel-connection" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Hayabusa connection</h2>
+              <p class="section-desc">SD-WAN-style enroll → mesh join → WebSocket grant. Preauth keys stay on the appliance.</p>
+            </div>
+            <span class="pill pill-idle" id="enrollPillConn">Checking</span>
+          </div>
+
+          <ol class="conn-pipeline" id="connPipeline" aria-label="Connection pipeline">
+            <li class="conn-step" data-step="enroll" id="stepEnroll">
+              <span class="conn-step-mark" aria-hidden="true">1</span>
+              <div>
+                <strong>Enroll</strong>
+                <span class="conn-step-state" id="stepEnrollState">idle</span>
+                <span class="conn-step-detail" id="stepEnrollDetail">—</span>
+              </div>
+            </li>
+            <li class="conn-step" data-step="mesh" id="stepMesh">
+              <span class="conn-step-mark" aria-hidden="true">2</span>
+              <div>
+                <strong>Mesh</strong>
+                <span class="conn-step-state" id="stepMeshState">idle</span>
+                <span class="conn-step-detail" id="stepMeshDetail">—</span>
+              </div>
+            </li>
+            <li class="conn-step" data-step="bridge" id="stepBridge">
+              <span class="conn-step-mark" aria-hidden="true">3</span>
+              <div>
+                <strong>Bridge</strong>
+                <span class="conn-step-state" id="stepBridgeState">idle</span>
+                <span class="conn-step-detail" id="stepBridgeDetail">—</span>
+              </div>
+            </li>
+          </ol>
+          <p class="section-desc" id="connPhaseLine">Phase: <span id="connPhase">idle</span></p>
+
+          <dl class="kv kv-wide">
+            <dt>Introducer</dt><dd id="introducerUrlConn">{{ hayabusa_public_url }}</dd>
+            <dt>Enrolled</dt><dd id="enrollOk">—</dd>
+            <dt>VPN connected</dt><dd id="vpnConnected">{{ 'yes' if vpn.connected else 'no' }}</dd>
+            <dt>VPN health</dt><dd id="vpnHealth">{{ vpn.health or ('connected' if vpn.connected else 'disconnected') }}</dd>
+            <dt>VPN backend</dt><dd id="vpnBackend">{{ vpn.backend }}</dd>
+            <dt>Public IP</dt><dd id="publicIp">{{ public_ip or '—' }}</dd>
+            <dt>VPN IP</dt><dd id="vpnIp">{{ vpn.ip or '—' }}</dd>
+            <dt>Mesh server</dt><dd id="vpnServer">{{ vpn.mesh_server or '—' }}</dd>
+            <dt>VPN error</dt><dd id="vpnError" class="{% if vpn.error %}err-text{% endif %}">{{ vpn.error or '—' }}</dd>
+          </dl>
+          <div id="vpnFailBanner" class="banner banner-err" {% if not (vpn.error and not vpn.connected) %}hidden{% endif %}>
+            <strong id="vpnFailTitle">Mesh join failed</strong>
+            <span id="vpnFailCode" class="banner-code">{% if vpn.error and not vpn.connected %}{{ vpn.error_code or '' }}{% endif %}</span>
+            <span id="vpnFailDetail">{% if vpn.error and not vpn.connected %}{{ vpn.error or '' }}{% endif %}</span>
+            <span id="vpnFailFix" class="banner-fix">{% if vpn.error and not vpn.connected and vpn.fix %}Fix: {{ vpn.fix }}{% endif %}</span>
+          </div>
+          <div class="row" style="margin-top:1.25rem;">
+            <button type="button" class="btn btn-primary" id="enrollBtn">Enroll &amp; connect</button>
+          </div>
+
+          {% if can_manual_mesh_override %}
+          <details class="manual-block" id="manualMeshBlock">
+            <summary>Manual mesh override</summary>
+            <p class="section-desc">Requires the global permission <code>controller_manual_mesh_override</code> on Hayabusa.</p>
+            <form id="vpnForm" class="form-grid form-grid-2">
+              <label class="field">Mesh server URL
+                <input name="mesh_server" placeholder="https://hayabusa.tracedroute.net:8443" value="{{ vpn.mesh_server or '' }}" />
+              </label>
+              <label class="field">Hostname
+                <input name="hostname" value="{{ vpn.hostname or 'hayabusa-controller' }}" />
+              </label>
+              <label class="field field-span-2">Preauth key
+                <input name="preauth_key" type="password" placeholder="Paste your own invite key (enrolled key is never shown)" autocomplete="off" />
+              </label>
+              <div class="row field-span-2">
+                <button type="submit" class="btn btn-secondary">Save &amp; join manually</button>
+              </div>
+            </form>
+          </details>
+          {% else %}
+          <p class="section-desc" id="manualMeshDenied" style="margin-top:1rem;">
+            Manual mesh override is hidden. Ask a Hayabusa admin to grant the global permission
+            <strong>Controller manual mesh override</strong>.
+          </p>
+          {% endif %}
+        </section>
+
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Access bridge</h2>
+              <p class="section-desc">Live session to Hayabusa after authentication and mesh join.</p>
+            </div>
+            <span class="pill pill-idle" id="bridgePill">Idle</span>
+          </div>
+          <dl class="kv kv-wide">
+            <dt>Mode</dt><dd id="brMode">{{ bridge.mode }}</dd>
+            <dt>Control path</dt><dd id="brPath">—</dd>
+            <dt>WS connected</dt><dd id="brConn">{{ 'yes' if bridge.connected else 'no' }}</dd>
+            <dt>Access granted</dt><dd id="brGrant">{{ 'yes' if bridge.granted else 'no' }}</dd>
+            <dt>Last event</dt><dd id="brEvent">{{ bridge.last_event }}</dd>
+            <dt>Error</dt><dd id="brError">{{ bridge.last_error or '—' }}</dd>
+          </dl>
+          <p class="section-desc" id="brPathHint">
+            After mesh join, the control channel uses the VPN. A <code>ws://100.64…</code> URL is normal —
+            WireGuard already encrypts that path (it is not cleartext on the internet).
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <!-- ZTP -->
+    <div class="tab-panel" data-panel="ztp" id="panel-ztp" hidden>
+      <div class="panel-stack" id="ztpPanel">
+        <section class="section section-wide ztp-hero-card">
+          <div class="section-head">
+            <div>
+              <h2>Site ZTP &amp; DHCP</h2>
+              <p class="section-desc">
+                Serve addresses and configuration to hosts on this controller’s LAN.
+                PXE/TFTP and <code>/ztp/fetch/…</code> stay local — Hayabusa’s cloud ZTP is untouched.
+              </p>
+            </div>
+            <span class="pill pill-idle" id="ztpPill">ZTP</span>
+          </div>
+
+          <div class="ztp-meter">
+            <article class="ztp-meter-tile">
+              <p class="label">dnsmasq</p>
+              <p class="value" id="ztpDns">—</p>
+            </article>
+            <article class="ztp-meter-tile">
+              <p class="label">DHCP</p>
+              <p class="value" id="ztpRun">—</p>
+            </article>
+            <article class="ztp-meter-tile">
+              <p class="label">Active leases</p>
+              <p class="value" id="ztpLeases">0</p>
+            </article>
+            <article class="ztp-meter-tile ztp-meter-wide">
+              <p class="label">Device fetch base</p>
+              <p class="value value-sm" id="ztpFetchBase">—</p>
+            </article>
+          </div>
+
+          <div class="row ztp-actions ztp-master-row">
+            <label class="check ztp-master-switch">
+              <input type="checkbox" id="ztpEnableSwitch" />
+              <span>Enable ZTP / DHCP on site LAN</span>
+            </label>
+            <button type="button" class="btn btn-ghost" id="ztpRefreshBtn">Refresh leases</button>
+          </div>
+          <p class="section-desc" id="ztpPermNote" hidden></p>
+          <p class="form-error" id="ztpError" hidden></p>
+        </section>
+
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Network pool</h2>
+              <p class="section-desc">Bind to the LAN NIC and define the address range local hosts will receive. Requires <code>approve_ztp</code> to turn on.</p>
+            </div>
+          </div>
+          <form id="ztpForm" class="stack">
+            <div class="form-grid form-grid-3">
+              <label class="field field-span-2">LAN interface
+                <select name="interface" id="ztpInterface">
+                  <option value="">Auto (not recommended)</option>
+                </select>
+              </label>
+              <label class="field">Lease hours
+                <input name="lease_hours" id="ztpLeaseHours" type="number" min="1" max="168" value="12" />
+              </label>
+              <label class="field">Subnet
+                <input name="subnet" id="ztpSubnet" placeholder="192.168.50.0" />
+              </label>
+              <label class="field">Netmask
+                <input name="netmask" id="ztpNetmask" placeholder="255.255.255.0" />
+              </label>
+              <label class="field">Gateway / router
+                <input name="gateway" id="ztpGateway" placeholder="192.168.50.1" />
+              </label>
+              <label class="field">Range start
+                <input name="range_start" id="ztpRangeStart" placeholder="192.168.50.100" />
+              </label>
+              <label class="field">Range end
+                <input name="range_end" id="ztpRangeEnd" placeholder="192.168.50.200" />
+              </label>
+              <label class="field">DNS servers
+                <input name="dns" id="ztpDnsServers" placeholder="192.168.50.1, 1.1.1.1" />
+              </label>
+            </div>
+
+            <div class="ztp-pxe-block">
+              <h3 class="subhead">PXE / TFTP (optional)</h3>
+              <p class="section-desc">Only needed when devices should network-boot from this controller.</p>
+              <div class="form-grid form-grid-3" style="margin-top:0.85rem;">
+                <label class="field">Next-server
+                  <input name="next_server" id="ztpNextServer" placeholder="Controller LAN IP" />
+                </label>
+                <label class="field field-span-2">Boot filename
+                  <input name="boot_filename" id="ztpBootFilename" placeholder="undionly.kpxe" />
+                </label>
+              </div>
+              <div class="row check-row" style="margin-top:0.85rem;">
+                <label class="check"><input type="checkbox" name="enable_tftp" id="ztpEnableTftp" /> Enable TFTP</label>
+                <label class="check"><input type="checkbox" name="enable_pxe" id="ztpEnablePxe" /> Enable PXE boot options</label>
+              </div>
+              <p class="section-desc" id="ztpHint" style="margin-top:0.75rem;">
+                Place iPXE/PXE binaries in the controller TFTP root. ZTP scripts sync like Ansible/OpenTofu;
+                secret names hydrate on LAN approval. Served from workspace
+                <code>ztp</code> / <code>bare-metal-ztp</code> via <code>/ztp/fetch/&lt;path&gt;</code>.
+              </p>
+            </div>
+
+            <div class="row" style="margin-top:0.25rem;">
+              <button type="submit" class="btn btn-secondary" id="ztpSaveBtn">Save configuration</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>DHCP leases</h2>
+              <p class="section-desc">Hosts that obtained an address from this controller.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="ztpLeasesTable">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>MAC</th>
+                  <th>Hostname</th>
+                  <th>Expiry</th>
+                </tr>
+              </thead>
+              <tbody id="ztpLeasesBody">
+                <tr class="empty-row"><td colspan="4">No leases yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- SECRETS -->
+    <div class="tab-panel" data-panel="secrets" id="panel-secrets" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Secrets vault</h2>
+              <p class="section-desc">Encrypted at rest on this controller. Works for any target (switches, VMs, DBs, cloud, IoT, etc.) and for <strong>Hayabusa AI</strong> provider keys (category <code>API</code> / kind <code>token</code>). Hayabusa only stores secret <em>names</em>; values stay here and resolve from the selected controller branch. Catalog with <code>read_secrets</code>; values with <code>manage_secrets</code>.</p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="secretsRefreshBtn">Refresh</button>
+          </div>
+          <p class="section-desc" id="secretsPermNote">—</p>
+          <form id="secretForm" class="form-grid form-grid-2 secrets-form-create" hidden>
+            <label class="field">Key
+              <input name="key" id="secretFormKey" required pattern="[A-Za-z0-9._:-]+" title="Letters, numbers, and . _ : -" placeholder="CORE_SWITCH_SSH_PASSWORD" />
+            </label>
+            <label class="field">Category
+              <select name="category" id="secretFormCategory"></select>
+            </label>
+            <label class="field">Kind
+              <select name="kind" id="secretFormKind"></select>
+            </label>
+            <label class="field">Target host
+              <input name="host" id="secretFormHost" placeholder="IP, hostname, or inventory name" />
+            </label>
+            <label class="field field-span-2">Label
+              <input name="label" id="secretFormLabel" placeholder="e.g. SSH for core switch · DB admin · API token" />
+            </label>
+            <label class="field field-span-2">Value
+              <textarea name="value" id="secretFormValue" rows="3" required placeholder="Secret value"></textarea>
+            </label>
+            <div class="row field-span-2">
+              <button class="btn btn-primary" type="submit" id="secretFormSubmit">Store secret</button>
+              <button class="btn btn-secondary" type="button" id="secretFormCancel" hidden>Cancel edit</button>
+            </div>
+          </form>
+          <div class="row secrets-toolbar" style="gap:0.5rem;flex-wrap:wrap;margin:0.75rem 0;">
+            <label class="field" style="margin:0;min-width:10rem;">
+              Filter category
+              <select id="secretFilterCategory"><option value="">All categories</option></select>
+            </label>
+            <label class="field" style="margin:0;min-width:10rem;">
+              Filter host
+              <input id="secretFilterHost" placeholder="192.168.1.200" />
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table secrets-table">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Category</th>
+                  <th>Kind</th>
+                  <th>Host</th>
+                  <th>Label</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="secretCatalogBody">
+                <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- GITOPS -->
+    <div class="tab-panel" data-panel="gitops" id="panel-gitops" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>GitOps (GitHub / GitLab)</h2>
+              <p class="section-desc">
+                Opt in to use a remote repository as the source of truth for Ansible and OpenTofu.
+                On GitLab/GitHub push (webhook) or Sync now, Hayabusa updates then <strong>pushes onto this controller</strong>.
+                Packaged default playbooks in the console are never overwritten. Secrets and LAN approve stay here.
+                Switching back to Novice (setup redo) also syncs Git content onto this controller before unlocking local edits.
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary" id="gitopsRefreshBtn">Refresh</button>
+          </div>
+          <p class="section-desc" id="gitopsPermNote">—</p>
+          <form id="gitopsForm" class="form-grid form-grid-2">
+            <label class="field-check" style="grid-column:1/-1;">
+              <input type="checkbox" id="gitopsEnabled" name="enabled" />
+              Enable GitOps (disable local workspace as source of truth)
+            </label>
+            <label>Provider
+              <select id="gitopsProvider" name="provider">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab</option>
+              </select>
+            </label>
+            <label>Instance base URL
+              <input type="url" id="gitopsBaseUrl" name="base_url" placeholder="https://github.com or https://gitlab.example.com" />
+            </label>
+            <label>Repository <span class="muted">(org/name — Ansible / OpenTofu)</span>
+              <input type="text" id="gitopsRepo" name="repo" placeholder="acme/hayabusa-iac" autocomplete="off" />
+            </label>
+            <label>Branch / ref
+              <input type="text" id="gitopsRef" name="ref" placeholder="main" />
+            </label>
+            <label>Path prefix <span class="muted">(optional)</span>
+              <input type="text" id="gitopsPathPrefix" name="path_prefix" placeholder="leave empty if Ansible/ and OpenTofu/ are at repo root" />
+            </label>
+            <label>ZTP scripts repository <span class="muted">(org/name — vendor + bare-metal ZTP)</span>
+              <input type="text" id="gitopsZtpRepo" name="ztp_repo" placeholder="acme/hayabusa-ztp" autocomplete="off" required />
+            </label>
+            <label>ZTP branch / ref <span class="muted">(optional)</span>
+              <input type="text" id="gitopsZtpRef" name="ztp_ref" placeholder="defaults to IaC branch" />
+            </label>
+            <label>ZTP path prefix <span class="muted">(optional)</span>
+              <input type="text" id="gitopsZtpPathPrefix" name="ztp_path_prefix" placeholder="leave empty if Ansible/ztp is at repo root" />
+            </label>
+            <label>Auth secret key <span class="muted">(vault PAT / deploy token)</span>
+              <input type="text" id="gitopsAuthKey" name="auth_secret_key" placeholder="gitops_github_pat" autocomplete="off" />
+            </label>
+            <label>Webhook secret key <span class="muted">(vault)</span>
+              <input type="text" id="gitopsWebhookKey" name="webhook_secret_key" placeholder="gitops_webhook_secret" autocomplete="off" />
+            </label>
+            <label>Poll interval (seconds)
+              <input type="number" id="gitopsPoll" name="poll_seconds" min="60" max="86400" value="600" />
+            </label>
+            <div class="form-actions" style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="submit" class="btn btn-primary" id="gitopsSaveBtn">Save</button>
+              <button type="button" class="btn btn-secondary" id="gitopsTestBtn">Test connection</button>
+              <button type="button" class="btn btn-ghost" id="gitopsSyncBtn">Sync now</button>
+            </div>
+          </form>
+          <dl class="kv kv-wide" style="margin-top:1rem;">
+            <dt>Last sync</dt><dd id="gitopsLastSync">—</dd>
+            <dt>Commit SHA</dt><dd id="gitopsSha">—</dd>
+            <dt>Webhook paths</dt><dd id="gitopsWebhookPaths">—</dd>
+            <dt>Bridge</dt><dd id="gitopsBridge">—</dd>
+          </dl>
+          <p class="section-desc" id="gitopsNote" style="margin-top:0.75rem;"></p>
+          <p class="section-desc">
+            Store a read-only PAT (GitHub) or deploy/project token (GitLab) and a webhook secret in
+            <strong>Secrets</strong> (category GitOps). Playbooks in Git must use placeholders only —
+            <code>{{ '{{ hayabusa_secret:KEY }}' }}</code> — never real passwords.
+          </p>
+        </section>
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Team Git bindings</h2>
+              <p class="section-desc">
+                Admins attach a GitHub/GitLab repo to a controller <strong>team</strong>.
+                Members publish only playbooks owned by that team (or themselves under that team),
+                and only when their sign-in has the matching GitHub/GitLab account linked.
+              </p>
+            </div>
+          </div>
+          <p class="section-desc" id="gitopsLinkedMe">Linked accounts: —</p>
+          <div class="form-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0 0.75rem;">
+            <a class="btn btn-secondary" id="gitopsLinkGitlabBtn" href="/auth/gitlab/start?link=1">Link GitLab (OAuth)</a>
+            <a class="btn btn-secondary" id="gitopsLinkGithubBtn" href="/auth/github/start?link=1">Link GitHub (OAuth)</a>
+            <button type="button" class="btn btn-ghost" id="gitopsLinkRefreshBtn">Refresh from session</button>
+          </div>
+          <details id="gitopsDeclareLink" style="margin-bottom:0.75rem;">
+            <summary>Declare login (lab only — prefer OAuth above)</summary>
+            <form id="gitopsDeclareLinkForm" class="form-grid form-grid-2" style="margin-top:0.5rem;">
+              <label>Provider
+                <select id="gitopsDeclareProvider">
+                  <option value="gitlab">GitLab</option>
+                  <option value="github">GitHub</option>
+                </select>
+              </label>
+              <label>Login / username
+                <input type="text" id="gitopsDeclareLogin" placeholder="root" autocomplete="off" required />
+              </label>
+              <div class="form-actions" style="grid-column:1/-1;">
+                <button type="submit" class="btn btn-ghost">Save declared link</button>
+              </div>
+            </form>
+          </details>
+          <ul id="gitopsBindingsList" class="plain-list"></ul>
+          <form id="gitopsBindingForm" class="form-grid form-grid-2" style="margin-top:0.75rem;">
+            <label>Team id
+              <input type="text" id="gitopsBindTeam" name="team_id" placeholder="netops" autocomplete="off" required />
+            </label>
+            <label>Provider
+              <select id="gitopsBindProvider" name="provider">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab</option>
+              </select>
+            </label>
+            <label>Base URL
+              <input type="url" id="gitopsBindBase" name="base_url" placeholder="https://github.com" required />
+            </label>
+            <label>Repo (org/name)
+              <input type="text" id="gitopsBindRepo" name="repo" placeholder="acme/netops-iac" required />
+            </label>
+            <label>Branch
+              <input type="text" id="gitopsBindRef" name="ref" value="main" />
+            </label>
+            <label>Vault PAT key
+              <input type="text" id="gitopsBindAuthKey" name="auth_secret_key" placeholder="gitops_netops_pat" required />
+            </label>
+            <div class="form-actions" style="grid-column:1/-1;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button type="submit" class="btn btn-primary" id="gitopsBindSaveBtn">Save team binding</button>
+              <button type="button" class="btn btn-secondary" id="gitopsPublishBtn">Preview &amp; publish owned files</button>
+            </div>
+          </form>
+          <input type="hidden" id="gitopsPublishBindingId" value="" />
+          <div id="gitopsPublishPreview" class="section-desc" style="margin-top:0.75rem;display:none;">
+            <p id="gitopsPublishNote" style="margin:0 0 0.5rem;"></p>
+            <ul id="gitopsPublishFileList" class="plain-list"></ul>
+            <div class="form-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.5rem;">
+              <button type="button" class="btn btn-primary" id="gitopsPublishConfirmBtn">Confirm publish</button>
+              <button type="button" class="btn btn-ghost" id="gitopsPublishCancelBtn">Cancel</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- TOOLS -->
+    <div class="tab-panel" data-panel="tools" id="panel-tools" hidden>
+      <div class="panel-stack">
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Apache Guacamole console</h2>
+              <p class="section-desc">
+                SSH/RDP/VNC console for this site’s LAN hosts. Credentials come from Secrets
+                (<code>guacamole_peer_ssh_user</code> / <code>guacamole_peer_ssh_password</code>).
+              </p>
+            </div>
+            <span class="pill pill-idle" id="guacPill">Console</span>
+          </div>
+          <div class="guac-console-actions">
+            <button type="button" class="btn btn-primary" id="guacLoadBtn">Load Guacamole</button>
+            <button type="button" class="btn btn-secondary" id="guacRefreshBtn">Refresh</button>
+            <button type="button" class="btn btn-ghost" id="guacClearBtn">Clear</button>
+          </div>
+          <p class="section-desc" id="guacStatus" style="margin-top:0.75rem;">Guacamole is ready on this controller — click Load to open the console manager.</p>
+          <div class="guac-console-frame" id="guacConsoleFrame">
+            <div class="guac-console-toolbar">
+              <span>Apache Guacamole</span>
+              <span class="guac-dots" aria-hidden="true">
+                <span class="guac-dot red"></span>
+                <span class="guac-dot yellow"></span>
+                <span class="guac-dot green"></span>
+              </span>
+            </div>
+            <iframe id="guacFrame" class="guac-frame" title="Apache Guacamole console"></iframe>
+            <div class="guac-placeholder" id="guacPlaceholder">
+              <div>
+                <strong>Guacamole ready</strong>
+                Click Load Guacamole to open the console on this controller.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section section-wide">
+          <div class="section-head">
+            <div>
+              <h2>Ansible &amp; OpenTofu playbooks</h2>
+              <p class="section-desc">Playbooks live on this controller under user/team ownership — or, when GitOps is enabled, in your GitHub/GitLab repo. Hayabusa queues jobs; after LAN approve, Ansible/OpenTofu run here so vault secrets never leave this appliance.</p>
+            </div>
+          </div>
+          <div class="workspace-cta">
+            <p class="section-desc" style="margin:0;">ansible · OpenTofu · ztp · IoT · SCADA · GitOps</p>
+            <a class="btn btn-primary" href="/devops-iac">Open workspace</a>
+            <button type="button" class="btn btn-secondary" data-goto="gitops">GitOps settings</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  {% include "_legal_footer.html" %}
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+  <script>window.__hayabusaPublicUrl = {{ hayabusa_public_url|tojson }};</script>
+  <script src="/static/js/controller-session-keepalive.js?v=20260808a"></script>
+  <script src="/static/js/controller-liability-ack.js?v=20260914b"></script>
+  <script src="/static/js/controller.js?v=20260926i"></script>
+  {% include "_ecosystem_blade.html" %}
+</body>
+</html>

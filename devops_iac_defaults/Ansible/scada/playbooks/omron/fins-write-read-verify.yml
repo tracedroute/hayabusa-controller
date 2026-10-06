@@ -1,0 +1,82 @@
+---
+- name: Omron — FINS write/read verify (DM words)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    omron_verify_address: "{{ omron_verify_address | default(10) }}"
+    omron_verify_write_value: "{{ omron_verify_write_value | default(2468) }}"
+    fins_read_payload:
+      protocol: omron_fins
+      host: "{{ plc_host }}"
+      port: "{{ omron_fins_port | int }}"
+      fins_area: "{{ omron_fins_area }}"
+      address: "{{ omron_verify_address | int }}"
+      count: 1
+      dest_node: "{{ omron_dest_node | int }}"
+      source_node: "{{ omron_source_node | int }}"
+      timeout: "{{ plc_timeout | float }}"
+    fins_write_payload:
+      protocol: omron_fins
+      host: "{{ plc_host }}"
+      port: "{{ omron_fins_port | int }}"
+      fins_area: "{{ omron_fins_area }}"
+      address: "{{ omron_verify_address | int }}"
+      values: ["{{ omron_verify_write_value | int }}"]
+      dest_node: "{{ omron_dest_node | int }}"
+      source_node: "{{ omron_source_node | int }}"
+      authorized: true
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_omron_write=true for FINS write verification.
+      when: not (allow_omron_write | default(false) | bool)
+
+    - name: Read DM before write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env FINS_READ
+      environment:
+        FINS_READ: "{{ fins_read_payload | to_json }}"
+      register: fins_before
+      changed_when: false
+
+    - name: Write DM word via FINS
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" write --payload-env FINS_WRITE
+      environment:
+        FINS_WRITE: "{{ fins_write_payload | to_json }}"
+      register: fins_write
+      changed_when: true
+
+    - name: Read DM after write
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env FINS_READ
+      environment:
+        FINS_READ: "{{ fins_read_payload | to_json }}"
+      register: fins_after
+      changed_when: false
+
+    - name: Parse FINS results
+      ansible.builtin.set_fact:
+        fins_before_result: "{{ fins_before.stdout | from_json }}"
+        fins_write_result: "{{ fins_write.stdout | from_json }}"
+        fins_after_result: "{{ fins_after.stdout | from_json }}"
+
+    - name: Assert FINS write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - fins_write_result.success | bool
+          - fins_after_result.success | bool
+          - fins_after_result.result['values'][0] == (omron_verify_write_value | int)
+        fail_msg: >-
+          FINS verify failed at DM{{ omron_verify_address }}.
+          before={{ fins_before_result }} write={{ fins_write_result }} after={{ fins_after_result }}
+
+    - name: Show FINS round-trip
+      ansible.builtin.debug:
+        msg:
+          address: "DM{{ omron_verify_address }}"
+          before: "{{ fins_before_result.result['values'][0] }}"
+          written: "{{ omron_verify_write_value }}"
+          after: "{{ fins_after_result.result['values'][0] }}"

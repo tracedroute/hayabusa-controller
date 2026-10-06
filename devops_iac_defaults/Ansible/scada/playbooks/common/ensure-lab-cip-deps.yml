@@ -1,0 +1,23 @@
+---
+- name: Ensure lab CIP dependencies (cpppo client for Logix emulator tag I/O)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Install cpppo when missing (Logix lab tag read/write via enip client)
+      ansible.builtin.pip:
+        name: cpppo
+        state: present
+        executable: pip3
+      register: cpppo_install
+      changed_when: cpppo_install.changed
+
+    - name: Verify cpppo client module is importable
+      ansible.builtin.command:
+        cmd: python3 -c "import cpppo; print(cpppo.__version__)"
+      register: cpppo_version
+      changed_when: false
+
+    - name: Show cpppo version
+      ansible.builtin.debug:
+        msg: "cpppo {{ cpppo_version.stdout }} ready for lab Logix tag I/O"

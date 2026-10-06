@@ -1,0 +1,44 @@
+---
+- name: Siemens SoftPLC — read data block via REST API (production-like HTTP surface)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: List SoftPLC data blocks via REST
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ siemens_rest_port | default(8080) }}/api/DataBlocks"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: siemens_dbs
+      changed_when: false
+
+    - name: Assert at least one data block is published
+      ansible.builtin.assert:
+        that:
+          - siemens_dbs.json is iterable
+          - siemens_dbs.json | length > 0
+        fail_msg: "SoftPLC REST returned no data blocks: {{ siemens_dbs | default({}) }}"
+
+    - name: Read first published data block payload
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ siemens_rest_port | default(8080) }}/api/DataBlocks/{{ siemens_dbs.json[0].id | default(1) }}"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: siemens_db
+      changed_when: false
+
+    - name: Assert DB payload contains expected demo marker (Hello, S7!)
+      ansible.builtin.assert:
+        that:
+          - siemens_db.json.data is defined
+          - siemens_db.json.data | length > 0
+        fail_msg: "SoftPLC DB {{ siemens_dbs.json[0].id | default(1) }} missing data field"
+
+    - name: Show REST DB metadata
+      ansible.builtin.debug:
+        msg:
+          db_count: "{{ siemens_dbs.json | length }}"
+          db_number: "{{ siemens_dbs.json[0].id | default(1) }}"
+          data_prefix: "{{ siemens_db.json.data[:24] }}"

@@ -1,0 +1,10 @@
+---
+# Example inventory for SCADA & PLC remote checks.
+# Copy to inventory.yml and set plc_host to your controller/emulator.
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: /usr/bin/python3
+  vars:
+    plc_host: "192.168.2.137"

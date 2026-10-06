@@ -1,0 +1,44 @@
+---
+# PEREGRINE_SECURITY_FIRE_PLAYBOOK_V1
+- name: Zone / door / camera health snapshot (inventory-driven)
+  hosts: security_endpoints
+  gather_facts: false
+  vars:
+    endpoint_scheme: "{{ endpoint_scheme | default('https') }}"
+    endpoint_port: "{{ endpoint_port | default(443) }}"
+    endpoint_path: "{{ endpoint_path | default('/status') }}"
+    endpoint_token: "{{ lookup('env', 'SECURITY_PANEL_TOKEN') | default('', true) }}"
+  tasks:
+    - name: Skip hosts without ansible_host
+      ansible.builtin.meta: end_host
+      when: (ansible_host | default('')) | length == 0
+
+    - name: TCP check
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: "{{ endpoint_port }}"
+        timeout: 3
+      register: tcp
+      failed_when: false
+      changed_when: false
+
+    - name: HTTP(S) status path
+      ansible.builtin.uri:
+        url: "{{ endpoint_scheme }}://{{ ansible_host }}:{{ endpoint_port }}{{ endpoint_path }}"
+        method: GET
+        headers: "{{ {'Authorization': 'Bearer ' ~ endpoint_token} if (endpoint_token | length > 0) else {} }}"
+        validate_certs: false
+        status_code: [200, 204, 301, 302, 401, 403, 404]
+        timeout: 6
+      register: http
+      failed_when: false
+      changed_when: false
+
+    - name: Emit endpoint health row
+      ansible.builtin.debug:
+        msg:
+          name: "{{ inventory_hostname }}"
+          role: "{{ security_role | default('endpoint') }}"
+          host: "{{ ansible_host }}"
+          tcp_ok: "{{ not (tcp.failed | default(true)) }}"
+          http_status: "{{ http.status | default('n/a') }}"

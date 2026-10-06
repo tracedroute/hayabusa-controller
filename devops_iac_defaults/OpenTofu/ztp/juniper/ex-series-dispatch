@@ -1,0 +1,20 @@
+configure
+set system hostname Juniper-EX-Series
+set system root-authentication plain-text-password
+set system root-authentication encrypted-password "$1$ZeJlM56K$OaOnIeOMnrBQxJ3jZC0O20"
+set system services ssh
+set system services netconf ssh port 830
+set system management-instance
+set system syslog host 192.168.2.1 interactive-commands notice
+!
+set interfaces ge-0/0/0 description Management
+set interfaces ge-0/0/0 unit 0 family inet address 192.168.2.110/24
+!
+set security policies from-zone trust to-zone untrust policy default-permit match source-address any
+set security policies from-zone trust to-zone untrust policy default-permit match destination-address any
+set security policies from-zone trust to-zone untrust policy default-permit match application any
+set security policies from-zone trust to-zone untrust policy default-permit then permit
+!
+set protocols spanning-tree bridge-priority 0
+!
+commit

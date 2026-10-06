@@ -1,0 +1,45 @@
+{
+  "device_type": "router",
+  "vendor": "paloalto",
+  "config_template": "panos",
+  "pnp_server": "pnpserver.local",
+  "dhcp_profile": "default-dhcp-profile",
+  "configuration": {
+    "system": {
+      "hostname": "paloalto-router-ztp",
+      "domain": "local",
+      "update_schedule": {
+        "enabled": true,
+        "recurrence": "daily",
+        "time": "02:00"
+      }
+    },
+    "network": {
+      "interfaces": [
+        {
+          "name": "ethernet1/1",
+          "ip": "dhcp",
+          "zone": "untrust",
+          "description": "WAN"
+        },
+        {
+          "name": "ethernet1/2",
+          "ip": "192.168.1.1",
+          "netmask": "255.255.255.0",
+          "zone": "trust",
+          "description": "LAN"
+        }
+      ]
+    },
+    "security": {
+      "rules": [
+        {
+          "name": "allow-trust-to-untrust",
+          "from": "trust",
+          "to": "untrust",
+          "action": "allow"
+        }
+      ]
+    }
+  }
+}

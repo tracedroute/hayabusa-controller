@@ -1,0 +1,97 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — OWASP ZAP
+- name: "SECops — OWASP ZAP baseline"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: false
+    secops_target: ""
+    secops_cli_args: ""
+    secops_zap_bin: "/opt/zap/zap.sh"
+    secops_timeout_sec: 600
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: zap
+          target: "{{ secops_target | default('(unset)', true) }}"
+          execute: "{{ secops_execute }}"
+
+    - name: Locate ZAP
+      ansible.builtin.stat:
+        path: "{{ secops_zap_bin }}"
+      register: zap_stat
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "zap={{ secops_zap_bin if zap_stat.stat.exists else '(not found)' }}"
+
+    - name: Require target and confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - zap_stat.stat.exists
+          - (secops_target | length > 0) or (secops_cli_args | length > 0)
+        fail_msg: "Need ZAP at secops_zap_bin, -e secops_target=https://… or secops_cli_args=…, -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Ensure results directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../results"
+        state: directory
+        mode: "0755"
+      when: secops_execute | bool
+
+    - name: Run ZAP baseline (structured)
+      ansible.builtin.command:
+        argv:
+          - "{{ secops_zap_bin }}"
+          - -cmd
+          - -quickurl
+          - "{{ secops_target }}"
+          - -quickprogress
+      register: tool_out
+      changed_when: false
+      when: secops_execute | bool and (secops_cli_args | length) == 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 10
+
+    - name: Run ZAP (cli args)
+      ansible.builtin.command:
+        argv: "{{ [secops_zap_bin] + (secops_cli_args.split() | list) }}"
+      register: tool_out_cli
+      changed_when: false
+      when: secops_execute | bool and (secops_cli_args | length) > 0
+      async: "{{ secops_timeout_sec }}"
+      poll: 10
+
+    - name: Merge output
+      ansible.builtin.set_fact:
+        secops_stdout: >-
+          {{ (tool_out.stdout | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stdout | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stdout | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+        secops_stderr: >-
+          {{ (tool_out.stderr | default('')) if (tool_out is defined and tool_out is not skipped) else '' }}{{
+          (tool_out_cli.stderr | default('')) if (tool_out_cli is defined and tool_out_cli is not skipped) else '' }}{{
+          (tool_out_r.stderr | default('')) if (tool_out_r is defined and tool_out_r is not skipped) else '' }}
+      when: secops_execute | bool
+
+    - name: Show output
+      ansible.builtin.debug:
+        msg: "{{ secops_stdout.splitlines() if secops_stdout is defined else [] }}"
+      when: secops_execute | bool
+
+    - name: Persist results for controller / workspace
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../results/zap-{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}.txt"
+        content: |
+          # hayabusa-secops zap
+          target={{ secops_target }}
+          --- stdout ---
+          {{ secops_stdout | default('') }}
+          --- stderr ---
+          {{ secops_stderr | default('') }}
+        mode: "0640"
+      when: secops_execute | bool and secops_stdout is defined

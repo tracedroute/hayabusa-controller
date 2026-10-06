@@ -1,0 +1,36 @@
+{
+  "device_type": "switch",
+  "vendor": "aruba",
+  "config_template": "aos-cx",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "aruba-switch-ztp",
+    "interfaces": [
+      {
+        "name": "1/1/1",
+        "description": "Access",
+        "vlan": 10
+      },
+      {
+        "name": "1/1/24",
+        "description": "Uplink trunk",
+        "mode": "trunk"
+      }
+    ],
+    "vlans": [
+      {
+        "id": 10,
+        "name": "data"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true
+      },
+      "https": {
+        "enabled": true
+      }
+    }
+  }
+}

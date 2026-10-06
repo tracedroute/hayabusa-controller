@@ -1,0 +1,61 @@
+---
+- name: Beckhoff TwinCAT — REST symbol write/read verify (SoftBeckhoff)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    beckhoff_verify_symbol: "{{ beckhoff_verify_symbol | default('test1') }}"
+    beckhoff_verify_rest_value_b64: "{{ beckhoff_verify_rest_value_b64 | default('Vw==') }}"
+  tasks:
+    - name: Safety gate
+      ansible.builtin.fail:
+        msg: Set allow_beckhoff_write=true for REST symbol write verification.
+      when: not (allow_beckhoff_write | default(false) | bool)
+
+    - name: Read symbol before write
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ beckhoff_rest_port | default(8080) }}/symbols/{{ beckhoff_verify_symbol }}"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: symbol_before
+      changed_when: false
+
+    - name: Write symbol via REST PUT (base64 JSON string — SoftBeckhoff API)
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ beckhoff_rest_port | default(8080) }}/symbols/{{ beckhoff_verify_symbol }}"
+        method: PUT
+        body_format: json
+        body: "{{ beckhoff_verify_rest_value_b64 | to_json }}"
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: symbol_write
+      changed_when: true
+
+    - name: Read symbol after write
+      ansible.builtin.uri:
+        url: "http://{{ plc_host }}:{{ beckhoff_rest_port | default(8080) }}/symbols/{{ beckhoff_verify_symbol }}"
+        method: GET
+        status_code: 200
+        timeout: "{{ plc_timeout | int }}"
+      register: symbol_after
+      changed_when: false
+
+    - name: Assert REST write/read round-trip
+      ansible.builtin.assert:
+        that:
+          - symbol_after.json == beckhoff_verify_rest_value_b64
+            or symbol_after.content | default('') | trim('"') == beckhoff_verify_rest_value_b64
+        fail_msg: >-
+          REST verify failed for {{ beckhoff_verify_symbol }}.
+          before={{ symbol_before.json | default(symbol_before.content) }}
+          after={{ symbol_after.json | default(symbol_after.content) }}
+          expected={{ beckhoff_verify_rest_value_b64 }}
+
+    - name: Show REST round-trip
+      ansible.builtin.debug:
+        msg:
+          symbol: "{{ beckhoff_verify_symbol }}"
+          before: "{{ symbol_before.json | default(symbol_before.content) }}"
+          written_b64: "{{ beckhoff_verify_rest_value_b64 }}"
+          after: "{{ symbol_after.json | default(symbol_after.content) }}"

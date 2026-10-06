@@ -1,0 +1,39 @@
+{
+  "device_type": "router",
+  "vendor": "arista",
+  "config_template": "eos-router",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "arista-router-ztp",
+    "interfaces": [
+      {
+        "name": "Ethernet1",
+        "ip": "dhcp",
+        "description": "WAN - ZTP"
+      },
+      {
+        "name": "Ethernet2",
+        "ip": "192.168.1.1/24",
+        "description": "LAN"
+      }
+    ],
+    "static_routes": [
+      {
+        "destination": "0.0.0.0/0",
+        "next_hop": "dhcp"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true
+      },
+      "ntp": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  }
+}

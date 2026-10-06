@@ -1,0 +1,73 @@
+---
+# HAYABUSA_SECOPS_PLAYBOOK_V1 — BloodHound.py
+# Domain creds via controller vault placeholders.
+- name: "SECops — BloodHound.py collector"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    secops_execute: "{{ secops_execute | default(false) }}"
+    secops_domain: "{{ secops_domain | default('', true) }}"
+    secops_dc: "{{ secops_dc | default('', true) }}"
+    secops_username: "{{ secops_username | default('', true) }}"
+    secops_password: "<<SECRET:ad_bind_password>>"
+    secops_collection: "{{ secops_collection | default('DCOnly', true) }}"
+    secops_timeout_sec: "{{ secops_timeout_sec | default(600) | int }}"
+  tasks:
+    - name: Safety brief
+      ansible.builtin.debug:
+        msg:
+          tool: bloodhound-python
+          domain: "{{ secops_domain | default('(unset)', true) }}"
+          dc: "{{ secops_dc | default('(unset)', true) }}"
+          execute: "{{ secops_execute }}"
+          creds: "password from controller vault key ad_bind_password when substituted"
+
+    - name: Locate bloodhound-python
+      ansible.builtin.shell: command -v bloodhound-python || command -v bloodhound || true
+      args:
+        executable: /bin/bash
+      register: which_tool
+      changed_when: false
+      failed_when: false
+
+    - name: Report availability
+      ansible.builtin.debug:
+        msg: "bloodhound={{ which_tool.stdout | trim | default('(not found)') }}"
+
+    - name: Require domain params and confirm
+      ansible.builtin.assert:
+        that:
+          - secops_execute | bool
+          - secops_domain | length > 0
+          - secops_dc | length > 0
+          - secops_username | length > 0
+          - (which_tool.stdout | trim | length) > 0
+        fail_msg: "Need collector binary, -e secops_domain/dc/username, and -e secops_execute=true."
+      when: secops_execute | bool
+
+    - name: Run BloodHound.py
+      ansible.builtin.command:
+        argv:
+          - "{{ which_tool.stdout | trim }}"
+          - -d
+          - "{{ secops_domain }}"
+          - -u
+          - "{{ secops_username }}"
+          - -p
+          - "{{ secops_password }}"
+          - -ns
+          - "{{ secops_dc }}"
+          - -c
+          - "{{ secops_collection }}"
+      register: tool_out
+      changed_when: false
+      no_log: true
+      when: secops_execute | bool
+      async: "{{ secops_timeout_sec }}"
+      poll: 10
+
+    - name: Show collector result
+      ansible.builtin.debug:
+        var: tool_out.stdout_lines
+      when: secops_execute | bool and tool_out is defined

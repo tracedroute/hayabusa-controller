@@ -1,0 +1,200 @@
+{
+  "version": 2,
+  "description": "Offline AppX/path deletes inside install.wim for Windows client and Server (Desktop Experience). Paths are globs matched against WindowsApps before delete. Server Core often has no matches — that is expected.",
+  "category_order": ["Xbox", "Media", "Bing", "Productivity", "Games", "Support", "Server"],
+  "presets": [
+    {
+      "id": "recommended",
+      "label": "Recommended",
+      "description": "Defaults for the detected OS family (client or Server)",
+      "use_defaults": true
+    },
+    {
+      "id": "recommended-client",
+      "label": "Recommended (Windows client)",
+      "description": "Consumer bloat trim for Win10/Win11",
+      "applies_to": ["client"],
+      "use_defaults": true
+    },
+    {
+      "id": "recommended-server",
+      "label": "Recommended (Windows Server)",
+      "description": "Safe inbox AppX trim for Server Desktop Experience",
+      "applies_to": ["server"],
+      "categories": ["Xbox", "Media", "Bing", "Games", "Support"]
+    },
+    {
+      "id": "remove-all",
+      "label": "Remove all",
+      "description": "Select every catalog item that applies to this OS",
+      "option_ids": ["*"]
+    },
+    {
+      "id": "xbox-only",
+      "label": "Xbox bundle",
+      "description": "Remove only Xbox-related packages",
+      "categories": ["Xbox"]
+    },
+    {
+      "id": "none",
+      "label": "Keep everything",
+      "description": "Bank WIM without removing apps",
+      "option_ids": []
+    }
+  ],
+  "options": [
+    {
+      "id": "xbox-app",
+      "label": "Xbox App",
+      "category": "Xbox",
+      "applies_to": ["client", "server"],
+      "description": "Main Xbox companion application",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.XboxApp_*",
+      "default_enabled": true
+    },
+    {
+      "id": "xbox-tcui",
+      "label": "Xbox TCUI",
+      "category": "Xbox",
+      "applies_to": ["client", "server"],
+      "description": "Xbox title-call UI shell",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.Xbox.TCUI_*",
+      "default_enabled": true
+    },
+    {
+      "id": "xbox-game-overlay",
+      "label": "Xbox Game Overlay",
+      "category": "Xbox",
+      "applies_to": ["client"],
+      "description": "In-game overlay and capture UI",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.XboxGameOverlay_*",
+      "default_enabled": true
+    },
+    {
+      "id": "xbox-gaming-overlay",
+      "label": "Xbox Gaming Overlay",
+      "category": "Xbox",
+      "applies_to": ["client", "server"],
+      "description": "Gaming bar / Game Bar overlay package",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.XboxGamingOverlay_*",
+      "default_enabled": true
+    },
+    {
+      "id": "xbox-identity",
+      "label": "Xbox Identity Provider",
+      "category": "Xbox",
+      "applies_to": ["client", "server"],
+      "description": "Xbox Live identity and sign-in helper",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.XboxIdentityProvider_*",
+      "default_enabled": true
+    },
+    {
+      "id": "xbox-speech",
+      "label": "Xbox Speech to Text",
+      "category": "Xbox",
+      "applies_to": ["client", "server"],
+      "description": "Xbox speech-to-text overlay",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.XboxSpeechToTextOverlay_*",
+      "default_enabled": true
+    },
+    {
+      "id": "groove-music",
+      "label": "Groove Music",
+      "category": "Media",
+      "applies_to": ["client", "server"],
+      "description": "Legacy Microsoft music player (ZuneMusic)",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.ZuneMusic_*",
+      "default_enabled": true
+    },
+    {
+      "id": "movies-tv",
+      "label": "Movies & TV",
+      "category": "Media",
+      "applies_to": ["client", "server"],
+      "description": "Microsoft Movies & TV (ZuneVideo)",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.ZuneVideo_*",
+      "default_enabled": true
+    },
+    {
+      "id": "clipchamp",
+      "label": "Clipchamp",
+      "category": "Media",
+      "applies_to": ["client"],
+      "description": "Web-based video editor",
+      "wim_path": "\\Program Files\\WindowsApps\\Clipchamp.Clipchamp_*",
+      "default_enabled": true
+    },
+    {
+      "id": "bing-news",
+      "label": "Microsoft News",
+      "category": "Bing",
+      "applies_to": ["client", "server"],
+      "description": "News feed / MSN news app",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.BingNews_*",
+      "default_enabled": true
+    },
+    {
+      "id": "bing-weather",
+      "label": "Microsoft Weather",
+      "category": "Bing",
+      "applies_to": ["client", "server"],
+      "description": "Weather forecasts and alerts",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.BingWeather_*",
+      "default_enabled": true
+    },
+    {
+      "id": "teams",
+      "label": "Microsoft Teams",
+      "category": "Productivity",
+      "applies_to": ["client"],
+      "description": "Teams consumer / chat client",
+      "wim_path": "\\Program Files\\WindowsApps\\MicrosoftTeams_*",
+      "default_enabled": true
+    },
+    {
+      "id": "solitaire",
+      "label": "Solitaire Collection",
+      "category": "Games",
+      "applies_to": ["client"],
+      "description": "Microsoft Solitaire Collection",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.MicrosoftSolitaireCollection_*",
+      "default_enabled": true
+    },
+    {
+      "id": "get-help",
+      "label": "Get Help",
+      "category": "Support",
+      "applies_to": ["client", "server"],
+      "description": "Windows Get Help support app",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.GetHelp_*",
+      "default_enabled": true
+    },
+    {
+      "id": "get-started",
+      "label": "Get Started",
+      "category": "Support",
+      "applies_to": ["client"],
+      "description": "Tips and onboarding app",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.Getstarted_*",
+      "default_enabled": true
+    },
+    {
+      "id": "feedback-hub",
+      "label": "Feedback Hub",
+      "category": "Support",
+      "applies_to": ["client", "server"],
+      "description": "Windows Feedback Hub",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.WindowsFeedbackHub_*",
+      "default_enabled": false
+    },
+    {
+      "id": "server-bing-search",
+      "label": "Bing Search app",
+      "category": "Server",
+      "applies_to": ["server"],
+      "description": "Inbox Bing search AppX sometimes present on Server Desktop Experience",
+      "wim_path": "\\Program Files\\WindowsApps\\Microsoft.BingSearch_*",
+      "default_enabled": true
+    }
+  ]
+}

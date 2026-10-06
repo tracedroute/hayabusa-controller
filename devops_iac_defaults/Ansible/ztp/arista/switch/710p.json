@@ -1,0 +1,50 @@
+{
+  "device_type": "switch",
+  "vendor": "arista",
+  "config_template": "eos",
+  "pnp_server": "pnpserver.local",
+  "tftp_root": "/var/lib/peregrine/ztp/tftp",
+  "configuration": {
+    "hostname": "arista-710p-ztp",
+    "interfaces": [
+      {
+        "name": "Management1",
+        "ip": "dhcp",
+        "description": "ZTP management"
+      },
+      {
+        "name": "Ethernet1",
+        "description": "Access",
+        "switchport_mode": "access",
+        "access_vlan": 10
+      },
+      {
+        "name": "Ethernet48",
+        "description": "Uplink",
+        "switchport_mode": "trunk"
+      }
+    ],
+    "vlans": [
+      {
+        "id": 10,
+        "name": "data"
+      },
+      {
+        "id": 20,
+        "name": "voice"
+      }
+    ],
+    "services": {
+      "ssh": {
+        "enabled": true
+      },
+      "ntp": {
+        "servers": [
+          "1.1.1.1",
+          "8.8.8.8"
+        ]
+      }
+    }
+  },
+  "model": "710P"
+}

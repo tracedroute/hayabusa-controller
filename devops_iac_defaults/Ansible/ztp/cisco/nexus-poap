@@ -1,0 +1,69 @@
+#!/bin/tclsh
+
+# Nexus 9500v POAP Provisioning Script with Dynamic Boot Image Detection
+# Searches bootflash for .bin files and sets boot variable
+
+proc send_cmd {cmd} {
+    catch {cli $cmd} result
+    return $result
+}
+
+proc find_first_bin {} {
+    # Get bootflash directory listing
+    set output [send_cmd "dir bootflash: | include bin"]
+    puts "Bootflash contents: $output"
+    
+    # Split by lines and find first .bin file
+    foreach line [split $output "\n"] {
+        # Look for .bin extension
+        if {[regexp {(\S+\.bin)} $line -> filename]} {
+            puts "Found .bin file: $filename"
+            return $filename
+        }
+    }
+    
+    # Fallback - just return bootflash which auto-discovers
+    puts "No .bin file found, using bootflash auto-discovery"
+    return "nxos.bin"
+}
+
+# Discover the boot image
+set boot_image [find_first_bin]
+puts "Boot image to set: $boot_image"
+
+# Core provisioning commands
+set cmds [list \
+    "configure terminal" \
+    "hostname Cisco-Nexus-9500v" \
+    "feature ssh" \
+    "username admin password admin123 role network-admin" \
+    "ip ssh version 2" \
+    "crypto key generate rsa modulus 2048" \
+    "line vty 0 4" \
+    "transport input ssh" \
+    "exit" \
+    "spanning-tree mode rapid-pvst" \
+]
+
+# Set boot variable - use multiple formats for compatibility
+lappend cmds "boot nxos bootflash:$boot_image"
+lappend cmds "no boot system"
+lappend cmds "boot system bootflash:$boot_image"
+lappend cmds "copy running-config startup-config"
+lappend cmds "copy startup-config running-config"
+
+# Execute all commands
+foreach cmd $cmds {
+    puts ">>> $cmd"
+    set result [send_cmd $cmd]
+    if {[string length $result] > 0} {
+        puts "    Result: $result"
+    }
+}
+
+puts "=========================================="
+puts "POAP PROVISIONING COMPLETE"
+puts "Boot image: $boot_image"
+puts "Config saved and boot variable set"
+puts "Device will boot to NX-OS on reload"
+puts "=========================================="

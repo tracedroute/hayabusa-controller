@@ -1,0 +1,44 @@
+---
+- name: Beckhoff TwinCAT — read ADS symbols (production TwinCAT route)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    plc_payload:
+      protocol: beckhoff_ads
+      host: "{{ plc_host }}"
+      ams_net_id: "{{ beckhoff_ams_net_id }}"
+      ads_port: "{{ beckhoff_ads_port | int }}"
+      symbols: "{{ beckhoff_symbols }}"
+      timeout: "{{ plc_timeout | float }}"
+  tasks:
+    - name: Read PLC symbols via pyads (ADS — same as production HMI/SCADA)
+      ansible.builtin.command:
+        cmd: python3 "{{ playbook_dir }}/../scripts/plc_cli.py" read --payload-env PLC_PAYLOAD
+      environment:
+        PLC_PAYLOAD: "{{ plc_payload | to_json }}"
+      register: ads_read
+      changed_when: false
+
+    - name: Parse ADS result
+      ansible.builtin.set_fact:
+        ads_result: "{{ ads_read.stdout | from_json }}"
+
+    - name: Assert ADS dispatch succeeded
+      ansible.builtin.assert:
+        that:
+          - ads_result.success | bool
+        fail_msg: "ADS read failed: {{ ads_result | default({}) }}"
+
+    - name: Assert at least one symbol returned a value (real TwinCAT PLC)
+      ansible.builtin.assert:
+        that:
+          - ads_result.result['values'] | selectattr('error', 'equalto', '') | list | length > 0
+        fail_msg: >-
+          All ADS symbol reads failed. SoftBeckhoff lab image serves symbols on REST
+          (/symbols) — use twincat-read-symbols-rest.yml for lab, or target a real
+          TwinCAT runtime with a loaded PLC project.
+
+    - name: Show symbol values
+      ansible.builtin.debug:
+        msg: "{{ ads_result }}"

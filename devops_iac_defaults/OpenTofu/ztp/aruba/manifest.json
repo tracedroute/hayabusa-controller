@@ -1,0 +1,87 @@
+{
+  "vendor": "Aruba HPE",
+  "ztp_type": "TFTP",
+  "default_dhcp_option": "67",
+  "tftp_boot_trigger": "DHCP Option 67",
+  "device_families": {
+    "aos-cx": {
+      "name": "Aruba AOS-CX (Campus Switching)",
+      "description": "Fixed and modular campus switches",
+      "models": [
+        "6000",
+        "6100",
+        "6200",
+        "6300",
+        "6400",
+        "8000",
+        "83xx"
+      ],
+      "dispatch_script": "aos-cx-dispatch",
+      "protocol": "TFTP",
+      "default_user": "admin",
+      "default_password": "admin123",
+      "mgmt_interface": "mgmt",
+      "mgmt_ip": "192.168.2.50/24"
+    },
+    "aos-s": {
+      "name": "Aruba AOS-S (Access Layer)",
+      "description": "Access layer switches",
+      "models": [
+        "2530",
+        "2540",
+        "2930",
+        "3810",
+        "5400R"
+      ],
+      "dispatch_script": "aos-s-dispatch",
+      "protocol": "TFTP",
+      "default_user": "admin",
+      "default_password": "admin123",
+      "mgmt_interface": "vlan 1",
+      "mgmt_ip": "192.168.2.80/24"
+    }
+  },
+  "editable": true,
+  "console_accessible": true,
+  "console_path": "my-tofu-project/ztp/aruba",
+  "dispatch_scripts": [
+    {
+      "filename": "aos-cx-6300-dispatch",
+      "title": "Aos Cx 6300 Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-cx-8300-dispatch",
+      "title": "Aos Cx 8300 Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-cx-dispatch",
+      "title": "Aos Cx Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    },
+    {
+      "filename": "aos-s-dispatch",
+      "title": "Aos S Dispatch",
+      "description": "Existing aruba ZTP dispatch script (do not remove).",
+      "editable": true,
+      "tags": [
+        "aos"
+      ]
+    }
+  ],
+  "last_updated": "2026-10-06T03:48:53Z",
+  "notes": "Dispatch scripts are working assets \u2014 manifest wiring only; CI verifies filenames exist on disk."
+}
