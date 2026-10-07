@@ -36,7 +36,7 @@ jobs:
           key: hayabusa-announcer-version-${{ github.run_id }}
           restore-keys: |
             hayabusa-announcer-version-
-
+          avatar_url: "https://cdn.discordapp.com/attachments/1447454869693927451/1557526585597235331/0n69dfw.png?backend=b2&ex=6ac81f2b&is=6ac6cdab&hm=61039fd77c3c07f0f91f377aafccbe23089432e3d76e077d1c6a5160fba027b0&"
       - name: Fetch live version from Microsoft Store
         id: store
         run: |
@@ -148,6 +148,7 @@ jobs:
         with:
           path: last_version.txt
           key: hayabusa-announcer-version-${{ github.run_id }}
+          avatar_url: "https://cdn.discordapp.com/attachments/1447454869693927451/1557526585597235331/0n69dfw.png?backend=b2&ex=6ac81f2b&is=6ac6cdab&hm=61039fd77c3c07f0f91f377aafccbe23089432e3d76e077d1c6a5160fba027b0&"
 
   # ---------------------------------------------------------------------------
   # Docker Hub: one job per repo (runs in parallel, failures are independent)
@@ -181,6 +182,7 @@ jobs:
           key: ${{ matrix.slug }}-image-${{ github.run_id }}
           restore-keys: |
             ${{ matrix.slug }}-image-
+          avatar_url: "https://cdn.discordapp.com/attachments/1447454869693927451/1557526585597235331/0n69dfw.png?backend=b2&ex=6ac81f2b&is=6ac6cdab&hm=61039fd77c3c07f0f91f377aafccbe23089432e3d76e077d1c6a5160fba027b0&"
 
       - name: Fetch newest image from Docker Hub
         id: hub
@@ -324,3 +326,5 @@ jobs:
         with:
           path: last_image.txt
           key: ${{ matrix.slug }}-image-${{ github.run_id }}
+          avatar_url: "https://cdn.discordapp.com/attachments/1447454869693927451/1557526585597235331/0n69dfw.png?backend=b2&ex=6ac81f2b&is=6ac6cdab&hm=61039fd77c3c07f0f91f377aafccbe23089432e3d76e077d1c6a5160fba027b0&"
+
