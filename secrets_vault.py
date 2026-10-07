@@ -32,6 +32,7 @@ SECRET_CATEGORIES: dict[str, str] = {
     "api": "API / service account",
     "cloud": "Cloud provider",
     "ansible": "Ansible / automation",
+    "gitops": "GitOps (GitHub / GitLab tokens)",
     "ztp": "ZTP provisioning",
     "iot": "IoT / embedded",
     "scada": "SCADA / industrial",

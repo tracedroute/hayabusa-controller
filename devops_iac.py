@@ -265,11 +265,19 @@ class DevopsIacWorkspace:
             return {"ok": False, "error": "binary file"}
         return {"ok": True, "path": self._norm(rel), "content": content}
 
-    def write_file(self, rel: str, content: str) -> dict[str, Any]:
+    def write_file(self, rel: str, content: str, *, allow_packaged_default: bool = False) -> dict[str, Any]:
         try:
             path = self._abs(rel)
+            safe = self._norm(rel)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        if not allow_packaged_default and self.is_packaged_default(safe):
+            return {
+                "ok": False,
+                "error": f"cannot overwrite packaged default playbook: {safe}",
+                "code": "protected_default",
+                "path": safe,
+            }
         raw = (content or "").encode("utf-8")
         if len(raw) > MAX_FILE_BYTES:
             return {"ok": False, "error": "file too large"}
@@ -278,12 +286,23 @@ class DevopsIacWorkspace:
         tmp.write_bytes(raw)
         os.chmod(tmp, 0o600)
         tmp.replace(path)
-        return {"ok": True, "path": self._norm(rel), "size": len(raw)}
+        return {"ok": True, "path": safe, "size": len(raw)}
 
-    def import_sync(self, files: list[dict[str, str]], *, owner_id: str = "") -> dict[str, Any]:
-        """Apply Hayabusa-pushed Ansible/OpenTofu files into this controller workspace."""
+    def import_sync(
+        self,
+        files: list[dict[str, str]],
+        *,
+        owner_id: str = "",
+        skip_packaged_defaults: bool = True,
+    ) -> dict[str, Any]:
+        """Apply Hayabusa-pushed Ansible/OpenTofu files into this controller workspace.
+
+        Packaged default playbooks are never overwritten (console defaults stay intact).
+        Missing defaults are re-seeded first with ``--ignore-existing``.
+        """
         self.seed_from_defaults()
         written = 0
+        skipped_defaults = 0
         bytes_n = 0
         owner = (owner_id or "admin").strip() or "admin"
         for item in files[:250]:
@@ -296,7 +315,10 @@ class DevopsIacWorkspace:
             low = rel.lower()
             if not low.startswith(("ansible/", "opentofu/")):
                 continue
-            out = self.write_file(rel, content)
+            if skip_packaged_defaults and self.is_packaged_default(rel):
+                skipped_defaults += 1
+                continue
+            out = self.write_file(rel, content, allow_packaged_default=not skip_packaged_defaults)
             if not out.get("ok"):
                 continue
             written += 1
@@ -305,10 +327,12 @@ class DevopsIacWorkspace:
         return {
             "ok": True,
             "written": written,
+            "skipped_defaults": skipped_defaults,
             "bytes": bytes_n,
             "count": written,
             "owner_id": owner,
             "hayabusa_saw_secret_values": False,
+            "protected_defaults": True,
         }
 
     def mkdir(self, rel: str) -> dict[str, Any]:
@@ -415,6 +439,11 @@ class DevopsIacWorkspace:
             "ipv4_addresses",
             "ip_addresses",
             "guest_ip_addresses",
+            "lan_ip",
+            "lanIp",
+            "management_ip",
+            "mgmt_ip",
+            "host",
         ):
             v = attrs.get(k)
             if isinstance(v, str) and self._valid_ipv4(v):
@@ -437,11 +466,41 @@ class DevopsIacWorkspace:
                         return str(v[0]).strip()
         return None
 
+    @staticmethod
+    def _network_provider_brand(typ: str) -> str | None:
+        """Map OpenTofu resource type prefix → Translate brand id."""
+        tl = (typ or "").lower()
+        mapping = (
+            ("meraki_", "cisco_meraki"),
+            ("iosxe_", "cisco_ios"),
+            ("iosxr_", "cisco_iosxr"),
+            ("nxos_", "cisco_nxos"),
+            ("asa_", "cisco_asa"),
+            ("ios_", "cisco_ios"),
+            ("junos_", "juniper_junos"),
+            ("eos_", "arista_eos"),
+            ("panos_", "paloalto_panos"),
+            ("fortios_", "fortinet_fortios"),
+            ("fortimanager_", "fortinet_fortimanager"),
+            ("bigip_", "f5_bigip"),
+            ("aoscx_", "aruba_aoscx"),
+            ("routeros_", "mikrotik_routeros"),
+            ("nsxt_", "vmware_nsx"),
+            ("nsx_", "vmware_nsx"),
+        )
+        for prefix, brand in mapping:
+            if tl.startswith(prefix) or f".{prefix}" in tl:
+                return brand
+        return None
+
     def _hosts_from_tfstate(self, blob: dict[str, Any], *, max_rows: int = 500) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         resources = blob.get("resources")
         if not isinstance(resources, list):
             return out
+        # Network providers rarely have one "router" resource — aggregate config
+        # fragments (iosxe_bgp, iosxe_interface_*, …) by device/hostname/IP.
+        net_devices: dict[str, dict[str, Any]] = {}
         for res in resources:
             if not isinstance(res, dict) or res.get("mode") == "data":
                 continue
@@ -449,18 +508,115 @@ class DevopsIacWorkspace:
             name = str(res.get("name") or "")
             module = str(res.get("module") or "")
             tl = typ.lower()
+            brand = self._network_provider_brand(typ)
             instances = res.get("instances")
             if not isinstance(instances, list):
                 continue
             for inst in instances:
-                if len(out) >= max_rows:
-                    return out
+                if len(out) + len(net_devices) >= max_rows * 2:
+                    break
                 if not isinstance(inst, dict):
                     continue
                 attrs = inst.get("attributes")
                 if not isinstance(attrs, dict):
                     continue
                 ip_val = self._ip_from_attrs(attrs)
+                idx = inst.get("index_key")
+                if module:
+                    addr = f"{module}.{typ}.{name}" if idx is None else f"{module}.{typ}.{name}[{idx}]"
+                else:
+                    addr = f"{typ}.{name}" if idx is None else f"{typ}.{name}[{idx}]"
+
+                if brand:
+                    # Multi-device: attrs.device. Single-device: collapse all
+                    # iosxe_* (etc.) under brand+module so BGP/interface leaf
+                    # names are never hosts; hostname upgrades the display name.
+                    device_attr = ""
+                    v_dev = attrs.get("device")
+                    if isinstance(v_dev, str) and v_dev.strip():
+                        device_attr = v_dev.strip()[:200]
+                    hostname_attr = ""
+                    v_hn = attrs.get("hostname")
+                    if (
+                        isinstance(v_hn, str)
+                        and v_hn.strip()
+                        and not self._valid_ipv4(v_hn.strip())
+                    ):
+                        hostname_attr = v_hn.strip()[:200]
+                    display_name = ""
+                    if device_attr:
+                        display_name = device_attr
+                    elif hostname_attr:
+                        display_name = hostname_attr
+                    elif (
+                        tl.endswith("_system")
+                        or tl.endswith("_device")
+                        or "_devices" in tl
+                        or tl.endswith("_devices")
+                    ):
+                        v_nm = attrs.get("name")
+                        if (
+                            isinstance(v_nm, str)
+                            and v_nm.strip()
+                            and not self._valid_ipv4(v_nm.strip())
+                        ):
+                            display_name = v_nm.strip()[:200]
+                    if device_attr:
+                        key = device_attr.lower()
+                    else:
+                        key = f"{brand}:{module or 'root'}".lower()
+                    row = net_devices.get(key)
+                    if row is None:
+                        label = (
+                            display_name
+                            or ip_val
+                            or (module.split(".")[-1] if module else brand)
+                        )
+                        role_blob = f"{key} {label}".lower()
+                        row = {
+                            "ip": ip_val,
+                            "name": label,
+                            "hostname": display_name or label,
+                            "source": "opentofu",
+                            "tofu_address": addr,
+                            "tofu_type": typ,
+                            "tofu_types": [typ],
+                            "brand_hint": brand,
+                            "role_hint": (
+                                "router"
+                                if any(t in role_blob for t in ("router", "rtr", "edge", "gw"))
+                                else (
+                                    "switch"
+                                    if any(t in role_blob for t in ("switch", "-sw", "_sw"))
+                                    else "other"
+                                )
+                            ),
+                            "kind": "network_device",
+                        }
+                        net_devices[key] = row
+                    else:
+                        if ip_val and not row.get("ip"):
+                            row["ip"] = ip_val
+                        if display_name and (
+                            not row.get("hostname")
+                            or row["hostname"] in {row.get("ip"), key, brand}
+                            or (
+                                module
+                                and row["hostname"] == module.split(".")[-1]
+                            )
+                        ):
+                            row["name"] = display_name
+                            row["hostname"] = display_name
+                        # Prefer system/hostname resource as representative address
+                        if tl.endswith("_system") or hostname_attr:
+                            row["tofu_address"] = addr
+                            row["tofu_type"] = typ
+                        types = row.get("tofu_types") if isinstance(row.get("tofu_types"), list) else []
+                        if typ not in types:
+                            types.append(typ)
+                        row["tofu_types"] = types[:40]
+                    continue
+
                 show = bool(ip_val)
                 if not show:
                     for hint in (
@@ -488,28 +644,30 @@ class DevopsIacWorkspace:
                         disp = v.strip()[:200]
                         break
                 disp = disp or name
-                idx = inst.get("index_key")
-                if module:
-                    addr = f"{module}.{typ}.{name}" if idx is None else f"{module}.{typ}.{name}[{idx}]"
-                else:
-                    addr = f"{typ}.{name}" if idx is None else f"{typ}.{name}[{idx}]"
                 vmid = attrs.get("vm_id")
                 if vmid is None and isinstance(attrs.get("id"), (int, str)) and str(attrs.get("id")).isdigit():
                     vmid = int(attrs["id"])
                 elif isinstance(vmid, str) and vmid.isdigit():
                     vmid = int(vmid)
-                row: dict[str, Any] = {
+                row_vm: dict[str, Any] = {
                     "ip": ip_val,
                     "name": disp or addr,
                     "source": "opentofu",
                     "tofu_address": addr,
                     "tofu_type": typ,
                     "vmid": vmid if isinstance(vmid, int) else None,
+                    "kind": "compute",
                 }
                 if "started" in attrs:
-                    row["started"] = bool(attrs.get("started"))
-                out.append(row)
-        return out
+                    row_vm["started"] = bool(attrs.get("started"))
+                out.append(row_vm)
+
+        # Prefer named network devices; fill remaining slot budget.
+        for row in net_devices.values():
+            if len(out) >= max_rows:
+                break
+            out.append(row)
+        return out[:max_rows]
 
     def _hosts_from_ansible(self, *, max_rows: int = 500) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -586,8 +744,14 @@ class DevopsIacWorkspace:
                         out.append({"ip": first, "name": first, "source": "ansible"})
         return out
 
-    def inventory_summary(self, *, max_hosts: int = 500) -> dict[str, Any]:
-        """Compact OpenTofu + Ansible inventory for Hayabusa map merge (no secret values)."""
+    def inventory_summary(
+        self, *, max_hosts: int = 500, opentofu_only: bool = False
+    ) -> dict[str, Any]:
+        """Compact OpenTofu (+ optional Ansible) inventory for map / invent (no secrets).
+
+        When ``opentofu_only`` is True, only hosts derived from ``terraform.tfstate``
+        are returned (Translate & Migrate invent). Map merge may still include Ansible.
+        """
         self.seed_from_defaults()
         hosts: list[dict[str, Any]] = []
         state_path = None
@@ -602,7 +766,7 @@ class DevopsIacWorkspace:
                     hosts.extend(self._hosts_from_tfstate(blob, max_rows=max_hosts))
             except Exception:  # noqa: BLE001
                 pass
-        if len(hosts) < max_hosts:
+        if not opentofu_only and len(hosts) < max_hosts:
             hosts.extend(self._hosts_from_ansible(max_rows=max_hosts - len(hosts)))
         # Dedup by IP or tofu address / name
         seen: set[str] = set()
@@ -622,4 +786,200 @@ class DevopsIacWorkspace:
             "state_mtime": state_mtime,
             "hosts": uniq[:max_hosts],
             "count": len(uniq[:max_hosts]),
+            "opentofu_only": bool(opentofu_only),
         }
+
+    @staticmethod
+    def _looks_sensitive_key(key: str) -> bool:
+        low = (key or "").lower()
+        return any(
+            tok in low
+            for tok in (
+                "password",
+                "secret",
+                "token",
+                "private_key",
+                "api_key",
+                "apikey",
+                "credential",
+                "passwd",
+            )
+        )
+
+    def _redact_mapping(self, obj: Any, *, depth: int = 0) -> Any:
+        if depth > 6:
+            return "[truncated]"
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for k, v in list(obj.items())[:80]:
+                ks = str(k)
+                if self._looks_sensitive_key(ks):
+                    out[ks] = "[redacted]"
+                else:
+                    out[ks] = self._redact_mapping(v, depth=depth + 1)
+            return out
+        if isinstance(obj, list):
+            return [self._redact_mapping(x, depth=depth + 1) for x in obj[:80]]
+        if isinstance(obj, str) and len(obj) > 500:
+            return obj[:500] + "…"
+        return obj
+
+    def state_snapshot(
+        self,
+        *,
+        device_id: str = "",
+        ip: str = "",
+        name: str = "",
+        include_tf_config: bool = True,
+        include_raw_state: bool = False,
+        max_bytes: int = 400_000,
+    ) -> dict[str, Any]:
+        """Scoped OpenTofu/Ansible snapshot for AI recommend (no device access, secrets redacted)."""
+        self.seed_from_defaults()
+        device_id = (device_id or "").strip()
+        ip = (ip or "").strip()
+        name = (name or "").strip()
+        summary = self.inventory_summary()
+        hosts = list(summary.get("hosts") or [])
+        matched: list[dict[str, Any]] = []
+        needles = {x.lower() for x in (device_id, ip, name) if x}
+        for h in hosts:
+            if not isinstance(h, dict):
+                continue
+            if not needles:
+                matched.append(h)
+                continue
+            blob = " ".join(
+                str(h.get(k) or "")
+                for k in ("ip", "name", "tofu_address", "device_id", "stack_id", "id")
+            ).lower()
+            if any(n in blob for n in needles):
+                matched.append(h)
+        if needles and not matched:
+            # Exact-ish fallbacks
+            for h in hosts:
+                if not isinstance(h, dict):
+                    continue
+                hip = str(h.get("ip") or "").strip()
+                hname = str(h.get("name") or "").strip()
+                if (ip and hip == ip) or (name and hname == name) or (device_id and hname == device_id):
+                    matched.append(h)
+
+        state_path = summary.get("state_path")
+        state_excerpt: dict[str, Any] | None = None
+        raw_state_truncated = False
+        cand, rel = self._find_tfstate()
+        if cand and cand.is_file():
+            state_path = rel or state_path
+            try:
+                raw = cand.read_text(encoding="utf-8", errors="replace")
+                if len(raw.encode("utf-8")) > max_bytes:
+                    raw_state_truncated = True
+                    raw = raw[:max_bytes]
+                blob = json.loads(raw)
+                if isinstance(blob, dict):
+                    outputs = blob.get("outputs") if isinstance(blob.get("outputs"), dict) else {}
+                    resources = blob.get("resources") if isinstance(blob.get("resources"), list) else []
+                    # Never send raw output values to the LLM — keys only + redacted placeholders.
+                    safe_outputs: dict[str, Any] = {}
+                    for ok, ov in list(outputs.items())[:80]:
+                        if isinstance(ov, dict):
+                            safe_outputs[str(ok)] = {
+                                "type": ov.get("type"),
+                                "sensitive": True,
+                                "value": "[redacted]",
+                            }
+                        else:
+                            safe_outputs[str(ok)] = {"value": "[redacted]", "sensitive": True}
+                    # Keep only resources that match the device filter when provided.
+                    kept_resources: list[Any] = []
+                    for res in resources:
+                        if not isinstance(res, dict):
+                            continue
+                        if not needles:
+                            kept_resources.append(self._redact_mapping(res))
+                            if len(kept_resources) >= 40:
+                                break
+                            continue
+                        addrish = json.dumps(
+                            {
+                                "type": res.get("type"),
+                                "name": res.get("name"),
+                                "module": res.get("module"),
+                                "instances": res.get("instances"),
+                            },
+                            default=str,
+                        ).lower()
+                        if any(n in addrish for n in needles):
+                            kept_resources.append(self._redact_mapping(res))
+                        if len(kept_resources) >= 40:
+                            break
+                    state_excerpt = {
+                        "version": blob.get("version"),
+                        "terraform_version": blob.get("terraform_version"),
+                        "serial": blob.get("serial"),
+                        "outputs": safe_outputs,
+                        "resources": kept_resources if needles else kept_resources[:40],
+                        "resource_count_total": len(resources),
+                    }
+                    if include_raw_state and not needles:
+                        # Never return full raw state without a device filter.
+                        state_excerpt["raw_omitted"] = "device filter required for raw state"
+            except Exception as exc:  # noqa: BLE001
+                state_excerpt = {"error": f"state_parse:{exc}"[:200]}
+
+        tf_files: list[dict[str, str]] = []
+        if include_tf_config:
+            root = self.root / "OpenTofu"
+            if root.is_dir():
+                for dirpath, dirnames, filenames in os.walk(root):
+                    dirnames[:] = [d for d in dirnames if d not in {".terraform", ".git"}]
+                    for fn in filenames:
+                        if not fn.endswith((".tf", ".tf.json", ".tofu")):
+                            continue
+                        path = Path(dirpath) / fn
+                        try:
+                            if path.stat().st_size > 200_000:
+                                continue
+                            text = path.read_text(encoding="utf-8", errors="replace")
+                        except OSError:
+                            continue
+                        if needles and not any(n in text.lower() for n in needles) and matched:
+                            # Still include small root files that define providers/vars
+                            rel_p = str(path.relative_to(self.root)).replace("\\", "/")
+                            if rel_p.count("/") > 2 and "variable" not in text[:400].lower():
+                                continue
+                        rel_p = str(path.relative_to(self.root)).replace("\\", "/")
+                        if len(text) > 24_000:
+                            text = text[:24_000] + "\n# … truncated …\n"
+                        tf_files.append({"path": rel_p, "content": text})
+                        if len(tf_files) >= 12:
+                            break
+                    if len(tf_files) >= 12:
+                        break
+
+        branch = (
+            os.environ.get("CONTROLLER_DISPLAY_NAME")
+            or os.environ.get("HAYABUSA_CONTROLLER_BRANCH")
+            or os.environ.get("CONTROLLER_MESH_HOSTNAME")
+            or ""
+        ).strip()
+
+        return {
+            "ok": True,
+            "device_access": "none",
+            "controller_branch": branch or None,
+            "device_id": device_id or (matched[0].get("name") if matched else None),
+            "filter": {"device_id": device_id or None, "ip": ip or None, "name": name or None},
+            "matched_hosts": matched[:50],
+            "state_path": state_path,
+            "state_mtime": summary.get("state_mtime"),
+            "state_excerpt": state_excerpt,
+            "state_truncated": raw_state_truncated,
+            "opentofu_files": tf_files,
+            "values_redacted": True,
+            "ephemeral": True,
+            "persist_forbidden": True,
+            "generated_at": int(time.time()),
+        }
+

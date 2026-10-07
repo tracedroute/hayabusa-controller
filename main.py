@@ -979,8 +979,24 @@ def _must_change_password() -> bool:
         return False
 
 
+def _needs_sso_admin() -> bool:
+    try:
+        return bool(auth_settings.needs_sso_admin())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _require_2fa_for_signins() -> bool:
+    try:
+        return bool(auth_settings.require_2fa())
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _post_login_home() -> str:
-    """After sign-in: force password change, then first-run setup, else dashboard."""
+    """After sign-in: claim SSO admin (first boot), then first-run setup, else dashboard."""
+    if _needs_sso_admin():
+        return "/auth/claim-admin"
     if _must_change_password():
         return "/auth/set-password"
     return "/setup" if not setup.completed() else "/"
@@ -988,11 +1004,61 @@ def _post_login_home() -> str:
 
 def _require_setup_complete(request: Request) -> RedirectResponse | None:
     """Gate protected HTML pages until the admin finishes /setup."""
+    if _needs_sso_admin():
+        return RedirectResponse("/auth/claim-admin", status_code=302)
     if _must_change_password():
         return RedirectResponse("/auth/set-password", status_code=302)
     if setup.completed():
         return None
     return RedirectResponse("/setup", status_code=302)
+
+
+def _invalidate_bootstrap_password(*, updated_by: str = "bootstrap-used") -> None:
+    """Burn the one-time first-launch password so it cannot be reused."""
+    _settings.manual_password = ""
+    os.environ["CONTROLLER_MANUAL_PASSWORD"] = ""
+    path = Path(_settings.data_dir) / "bootstrap.env"
+    try:
+        lines: list[str] = []
+        if path.is_file():
+            for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if raw.strip().startswith("CONTROLLER_MANUAL_PASSWORD="):
+                    lines.append("CONTROLLER_MANUAL_PASSWORD=")
+                    continue
+                lines.append(raw)
+        else:
+            lines.append("CONTROLLER_MANUAL_PASSWORD=")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        logger.warning("failed to clear CONTROLLER_MANUAL_PASSWORD: %s", exc)
+    try:
+        auth_settings.set_local_password_enabled(False, updated_by=updated_by)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("disable local password after bootstrap use failed: %s", exc)
+
+
+def _mfa_required_message(provider: str) -> str:
+    prov = (provider or "account").strip().lower()
+    if prov == "github":
+        return (
+            "GitHub two-factor authentication is required. Enable 2FA on your GitHub account, "
+            "then try again."
+        )
+    if prov == "discord":
+        return (
+            "Discord two-factor authentication is required. Enable 2FA on your Discord account, "
+            "then try again."
+        )
+    if prov == "google":
+        return (
+            "Google multi-factor authentication is required for this sign-in. "
+            "Enable 2-Step Verification on your Google Account and complete MFA when prompted."
+        )
+    return "Two-factor authentication is required for this sign-in method."
 
 
 def _can_manage_setup(request: Request) -> bool:
@@ -1259,7 +1325,16 @@ async def _redeem_oauth_ticket(ticket: str, sig: str) -> dict[str, Any] | None:
     return None
 
 
-async def _finish_login(request: Request, *, username: str, email: str, provider: str, sub: str = "") -> RedirectResponse:
+async def _finish_login(
+    request: Request,
+    *,
+    username: str,
+    email: str,
+    provider: str,
+    sub: str = "",
+    mfa_ok: bool | None = None,
+    mfa_checked: bool = False,
+) -> RedirectResponse:
     now = int(time.time())
     email_n = str(email or "").strip()
     sub_n = str(sub or "").strip()
@@ -1268,10 +1343,42 @@ async def _finish_login(request: Request, *, username: str, email: str, provider
     if provider_n == "teams":
         provider_n = "microsoft"
 
-    # Default deny unless an admin whitelisted this identity for this platform.
-    # Break-glass: local manual password login always allowed so an admin can
-    # reach Administration → Sign-in and grant OAuth/TOTP users.
-    if provider_n != "manual":
+    mfa_providers = {"github", "google", "discord"}
+    # First-boot SSO claim only applies to GitHub/Google/Discord OAuth completions.
+    claiming = (
+        bool(request.session.get("claim_sso_admin"))
+        and _needs_sso_admin()
+        and provider_n in mfa_providers
+    )
+
+    # First-boot: claiming Owner/admin via SSO — always require verified 2FA.
+    if claiming:
+        if not mfa_ok:
+            return RedirectResponse(
+                "/auth/claim-admin?error=" + urllib.parse.quote(_mfa_required_message(provider_n)),
+                status_code=302,
+            )
+        try:
+            signin_allowlist.add_identity(
+                provider=provider_n,
+                email=email_n,
+                username=username_n,
+                oauth_id=sub_n,
+                updated_by=email_n or username_n or "sso-claim",
+            )
+            auth_settings.mark_sso_admin_claimed(updated_by=email_n or username_n or "sso-claim")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("sso admin claim persist failed: %s", exc)
+            return RedirectResponse(
+                "/auth/claim-admin?error="
+                + urllib.parse.quote("Could not save allowlist — try again."),
+                status_code=302,
+            )
+        request.session.pop("claim_sso_admin", None)
+    elif provider_n != "manual":
+        # Default deny unless an admin whitelisted this identity for this platform.
+        # Break-glass: local manual password login always allowed so an admin can
+        # reach Administration → Sign-in and grant OAuth/TOTP users.
         allowed, reason = signin_allowlist.is_allowed(
             provider=provider_n,
             email=email_n,
@@ -1291,12 +1398,20 @@ async def _finish_login(request: Request, *, username: str, email: str, provider
                 f"/login?error={urllib.parse.quote(msg)}",
                 status_code=302,
             )
+        # Optional site-wide 2FA for allowlisted GitHub/Google/Discord accounts.
+        if provider_n in mfa_providers and _require_2fa_for_signins() and not mfa_ok:
+            return RedirectResponse(
+                "/login?error=" + urllib.parse.quote(_mfa_required_message(provider_n)),
+                status_code=302,
+            )
 
     request.session["authenticated"] = True
     request.session["username"] = username_n
     request.session["email"] = email_n
     request.session["provider"] = provider_n or provider
     request.session["sub"] = sub_n
+    if mfa_checked or mfa_ok is not None:
+        request.session["mfa_ok"] = bool(mfa_ok)
     # Advanced GitOps: link GitHub/GitLab identity to this controller user for owned-path publish.
     if provider_n in {"github", "gitlab"}:
         try:
@@ -2168,6 +2283,8 @@ async def setup_page(request: Request) -> HTMLResponse:
     redir = _require_auth(request)
     if redir:
         return redir
+    if _needs_sso_admin():
+        return RedirectResponse("/auth/claim-admin", status_code=302)
     if _must_change_password():
         return RedirectResponse("/auth/set-password", status_code=302)
     if setup.completed():
@@ -2487,6 +2604,15 @@ async def login_manual(
                 status_code=302,
             )
     if u == _settings.manual_username and secrets.compare_digest(p, _settings.manual_password):
+        # One-time bootstrap password: burn immediately, then force SSO admin claim.
+        if _needs_sso_admin() or _must_change_password():
+            _invalidate_bootstrap_password(updated_by=u or "admin")
+            try:
+                auth_settings.set_needs_sso_admin(True, updated_by=u or "admin")
+                auth_settings.set_must_change_password(False, updated_by=u or "admin")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("set needs_sso_admin failed: %s", exc)
+            request.session["claim_sso_admin"] = True
         return await _finish_login(request, username=u, email="", provider="manual", sub=u)
     ok_fail, msg_fail = ctrl_security.check_ip_rate_limit("login_fail", ip)
     ctrl_security.log_auth_failure(ip, "bad_credentials")
@@ -2537,23 +2663,41 @@ def _persist_manual_password(new_password: str) -> None:
         logger.warning("failed to persist CONTROLLER_MANUAL_PASSWORD: %s", exc)
 
 
-@app.get("/auth/set-password", response_class=HTMLResponse)
-async def auth_set_password_page(request: Request) -> HTMLResponse:
-    """Forced password change after first bootstrap login."""
+@app.get("/auth/claim-admin", response_class=HTMLResponse)
+async def auth_claim_admin_page(request: Request) -> HTMLResponse:
+    """First-boot: whitelist GitHub (preferred) / Google / Discord with 2FA as Owner."""
     redir = _require_auth(request)
     if redir:
         return redir
-    if not _must_change_password():
+    if not _needs_sso_admin():
         return RedirectResponse(_post_login_home(), status_code=302)
+    request.session["claim_sso_admin"] = True
     return TEMPLATES.TemplateResponse(
         request,
-        "set_password.html",
+        "claim_admin.html",
         {
             "user": _user(request),
             "csrf_token": ctrl_security.ensure_csrf_token(request.session),
             "error": (request.query_params.get("error") or "").strip(),
+            "github_preferred": True,
         },
     )
+
+
+@app.get("/auth/set-password", response_class=HTMLResponse)
+async def auth_set_password_page(request: Request) -> HTMLResponse:
+    """Legacy: redirect unfinished first-boot sites to SSO claim."""
+    redir = _require_auth(request)
+    if redir:
+        return redir
+    if _needs_sso_admin() or _must_change_password():
+        try:
+            auth_settings.set_needs_sso_admin(True, updated_by="legacy-set-password")
+            auth_settings.set_must_change_password(False, updated_by="legacy-set-password")
+        except Exception:  # noqa: BLE001
+            pass
+        return RedirectResponse("/auth/claim-admin", status_code=302)
+    return RedirectResponse(_post_login_home(), status_code=302)
 
 
 @app.post("/auth/set-password")
@@ -2562,35 +2706,11 @@ async def auth_set_password(
     password: str = Form(""),
     password_confirm: str = Form(""),
 ) -> RedirectResponse:
+    """Legacy endpoint — first-boot now uses /auth/claim-admin."""
     redir = _require_auth(request)
     if redir:
         return redir
-    if not _must_change_password():
-        return RedirectResponse(_post_login_home(), status_code=302)
-    pw = password or ""
-    confirm = password_confirm or ""
-    if len(pw) < 10:
-        return RedirectResponse(
-            "/auth/set-password?error=" + urllib.parse.quote("Password must be at least 10 characters."),
-            status_code=302,
-        )
-    if pw != confirm:
-        return RedirectResponse(
-            "/auth/set-password?error=" + urllib.parse.quote("Passwords do not match."),
-            status_code=302,
-        )
-    if secrets.compare_digest(pw, str(_settings.manual_password or "")):
-        return RedirectResponse(
-            "/auth/set-password?error="
-            + urllib.parse.quote("Choose a new password (not the bootstrap password)."),
-            status_code=302,
-        )
-    _persist_manual_password(pw)
-    try:
-        auth_settings.set_must_change_password(False, updated_by=_user(request).get("username") or "admin")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("clear must_change_password failed: %s", exc)
-    return RedirectResponse(_post_login_home(), status_code=302)
+    return RedirectResponse("/auth/claim-admin", status_code=302)
 
 
 def _bootstrap_env_value(key: str) -> str:
@@ -2868,8 +2988,12 @@ async def _oauth_start(request: Request, provider: str) -> RedirectResponse:
     if provider == "google":
         params["access_type"] = "offline"
         params["prompt"] = "select_account"
+        params["claims"] = json.dumps({"id_token": {"amr": {"essential": True}}})
     if provider == "github":
         params["allow_signup"] = "true"
+        # Prefer scopes that expose two_factor_authentication on GET /user.
+        if not str(params.get("scope") or "").strip():
+            params["scope"] = "user user:email read:user"
     if provider == "discord":
         params["prompt"] = "consent"
     return RedirectResponse(cfg["authorize"] + "?" + urllib.parse.urlencode(params), status_code=302)
@@ -2927,7 +3051,17 @@ async def auth_oauth_finish(request: Request) -> RedirectResponse:
     email = str(body.get("email") or "").strip()
     sub = str(body.get("oauth_id") or body.get("sub") or "").strip()
     username = _human_login_name(username=username, email=email, sub=sub)
-    return await _finish_login(request, username=username, email=email, provider=provider or "oauth", sub=sub)
+    mfa_ok = bool(body.get("mfa_ok")) if "mfa_ok" in body else None
+    mfa_checked = bool(body.get("mfa_checked"))
+    return await _finish_login(
+        request,
+        username=username,
+        email=email,
+        provider=provider or "oauth",
+        sub=sub,
+        mfa_ok=mfa_ok,
+        mfa_checked=mfa_checked or mfa_ok is not None,
+    )
 
 
 async def _oauth_callback(request: Request, provider: str) -> RedirectResponse:
@@ -3019,6 +3153,29 @@ async def _oauth_callback(request: Request, provider: str) -> RedirectResponse:
     sub = str(profile.get("sub") or profile.get("id") or "").strip()
     username = _human_login_name(username=str(username or ""), email=str(email or ""), sub=sub)
 
+    mfa_ok: bool | None = None
+    if provider == "github":
+        mfa_ok = bool(profile.get("two_factor_authentication"))
+    elif provider == "discord":
+        mfa_ok = bool(profile.get("mfa_enabled"))
+    elif provider == "google":
+        id_token = str(token_data.get("id_token") or "").strip()
+        if id_token:
+            try:
+                parts = id_token.split(".")
+                if len(parts) >= 2:
+                    pad = "=" * (-len(parts[1]) % 4)
+                    claims = json.loads(base64.urlsafe_b64decode(parts[1] + pad).decode("utf-8"))
+                    amr = claims.get("amr") if isinstance(claims, dict) else None
+                    methods = [str(x).lower() for x in amr] if isinstance(amr, list) else []
+                    mfa_ok = any(m in {"mfa", "hwk", "swk"} for m in methods)
+                else:
+                    mfa_ok = False
+            except Exception:  # noqa: BLE001
+                mfa_ok = False
+        else:
+            mfa_ok = False
+
     request.session.pop("oauth_link_only", None)
     # Already signed in + link flow: attach GitHub/GitLab identity without session swap.
     if link_only and provider in {"github", "gitlab"} and _authed(request):
@@ -3043,6 +3200,8 @@ async def _oauth_callback(request: Request, provider: str) -> RedirectResponse:
         email=str(email or ""),
         provider=provider,
         sub=sub,
+        mfa_ok=mfa_ok,
+        mfa_checked=mfa_ok is not None,
     )
 
 
@@ -3457,9 +3616,53 @@ async def api_admin_local_password_login_get(request: Request) -> JSONResponse:
             "available": _manual_password_login_available(),
             "password_configured": bool((_settings.manual_password or "").strip()),
             "other_signin_methods_ready": _other_signin_methods_ready(),
+            "needs_sso_admin": bool(st.get("needs_sso_admin")),
+            "require_2fa": bool(st.get("require_2fa", True)),
             "updated_at": st.get("updated_at"),
             "updated_by": st.get("updated_by") or "",
             "username": _settings.manual_username or "admin",
+        }
+    )
+
+
+@app.get("/api/admin/require-2fa")
+async def api_admin_require_2fa_get(request: Request) -> JSONResponse:
+    """Owner/admin: whether GitHub/Google/Discord sign-ins must present 2FA."""
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    st = auth_settings.get()
+    return JSONResponse(
+        {
+            "ok": True,
+            "enabled": bool(st.get("require_2fa", True)),
+            "updated_at": st.get("updated_at"),
+            "updated_by": st.get("updated_by") or "",
+            "note": (
+                "When enabled, allowlisted GitHub, Google, and Discord sign-ins must "
+                "complete provider 2FA. The first Owner/admin claim always requires 2FA."
+            ),
+        }
+    )
+
+
+@app.post("/api/admin/require-2fa")
+async def api_admin_require_2fa_post(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    body = await request.json()
+    if not isinstance(body, dict) or "enabled" not in body:
+        return JSONResponse({"ok": False, "error": "enabled boolean required"}, status_code=400)
+    actor = _user(request)
+    updated_by = str(actor.get("email") or actor.get("username") or _rbac_key(request) or "")
+    st = auth_settings.set_require_2fa(bool(body.get("enabled")), updated_by=updated_by)
+    return JSONResponse(
+        {
+            "ok": True,
+            "enabled": bool(st.get("require_2fa", True)),
+            "updated_at": st.get("updated_at"),
+            "updated_by": st.get("updated_by") or "",
         }
     )
 
@@ -5041,7 +5244,7 @@ async def ws_status(websocket: WebSocket) -> None:
                 "bridge": bridge.status(),
                 "enroll": enroller.status(),
                 "connection": _connection_public(),
-                "secrets": _secrets_public_for_request(ws_request),
+                "secrets": _secrets_public_for_request(ws_request),  # type: ignore[arg-type]
                 "iac": iac.status(),
             }
         )

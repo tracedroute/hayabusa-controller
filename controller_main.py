@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -29,6 +29,8 @@ from .bridge_rpc import BridgeRpcHandler, ZTP_JOB_KINDS
 from .config import Settings, get_settings
 from .connection_progress import ConnectionProgress, public_connection_view
 from .devops_iac import DevopsIacWorkspace
+from .gitops_store import GitOpsStore
+from .setup_store import SetupStore
 from .enroll import HayabusaEnroller, public_enroll_view
 from .iac_store import IacStore
 from .image_nest import ImageNestStore
@@ -130,7 +132,10 @@ elif _oauth_mode == "local":
 iac = IacStore(_settings)
 vpn = VpnClient(_settings)
 devops = DevopsIacWorkspace(_settings.devops_workspace, _settings.devops_defaults)
-devops.seed_from_defaults()
+gitops = GitOpsStore(_settings.data_dir)
+setup = SetupStore(_settings.data_dir)
+if not gitops.enabled():
+    devops.seed_from_defaults()
 ztp_edge = ZtpEdge(
     _settings.data_dir,
     public_base_url=_settings.public_base_url,
@@ -172,6 +177,7 @@ _rpc = BridgeRpcHandler(
     inventory_summary=_rpc_inventory_summary,
     ztp_edge=ztp_edge,
     ztp_status=ztp_edge.status,
+    gitops=gitops,
 )
 job_queue = JobQueue(_settings.data_dir, hydrator=_rpc._hydrate_job)
 _rpc.set_job_queue(job_queue)
@@ -604,6 +610,44 @@ def _session_begin(request: Request) -> None:
     request.session["_session_warn_before_sec"] = CONTROLLER_SESSION_WARN_BEFORE_SEC
 
 
+def _liability_require_on_login(request: Request) -> None:
+    """Reset risk acknowledgment for each new sign-in (not session renew)."""
+    request.session["liability_ack"] = False
+    request.session.pop("liability_ack_at", None)
+
+
+def _liability_acknowledged(request: Request) -> bool:
+    return bool(request.session.get("liability_ack"))
+
+
+_LIABILITY_GATE_ALLOW_EXACT = frozenset(
+    {
+        "/logout",
+        "/api/session/status",
+        "/api/session/renew",
+        "/api/liability/acknowledge",
+        "/healthz",
+        "/health",
+    }
+)
+_LIABILITY_GATE_ALLOW_PREFIXES = (
+    "/static/",
+    "/login",
+    "/auth/",
+)
+
+
+def _liability_gate_allowed(path: str, method: str) -> bool:
+    p = path or "/"
+    if p in _LIABILITY_GATE_ALLOW_EXACT:
+        return True
+    if any(p.startswith(pref) for pref in _LIABILITY_GATE_ALLOW_PREFIXES):
+        return True
+    if method == "GET" and not p.startswith("/api/"):
+        return True
+    return False
+
+
 def _session_expired(request: Request) -> bool:
     if not request.session.get("authenticated"):
         return True
@@ -634,6 +678,7 @@ def _session_status(request: Request) -> dict[str, Any]:
         "lifetime_sec": int(request.session.get("_session_lifetime_sec") or CONTROLLER_SESSION_LIFETIME_SEC),
         "warn_before_sec": warn_before,
         "should_warn": remaining > 0 and remaining <= warn_before,
+        "liability_acknowledged": _liability_acknowledged(request),
     }
 
 
@@ -648,12 +693,46 @@ def _authed(request: Request) -> bool:
     return True
 
 
+def _looks_like_oauth_subject(value: str) -> bool:
+    """True for Google/Discord-style numeric subject IDs mistaken for a display name."""
+    s = str(value or "").strip()
+    if not s:
+        return False
+    if s.isdigit() and len(s) >= 15:
+        return True
+    return False
+
+
+def _human_login_name(*, username: str = "", email: str = "", sub: str = "") -> str:
+    """Prefer email (or a non-subject username) for UI display names."""
+    u = str(username or "").strip()
+    e = str(email or "").strip()
+    s = str(sub or "").strip()
+    if e and (not u or u == s or _looks_like_oauth_subject(u)):
+        return e
+    if u and not _looks_like_oauth_subject(u):
+        return u
+    if e:
+        return e
+    if u:
+        return u
+    return s or "user"
+
+
 def _user(request: Request) -> dict[str, Any]:
+    username = str(request.session.get("username") or "").strip()
+    email = str(request.session.get("email") or "").strip()
+    sub = str(request.session.get("sub") or "").strip()
+    display = _human_login_name(username=username, email=email, sub=sub)
+    # Heal session if a prior login stored the OAuth subject as username.
+    if email and username != display and (_looks_like_oauth_subject(username) or username == sub):
+        request.session["username"] = display
+        username = display
     return {
-        "username": request.session.get("username") or "",
-        "email": request.session.get("email") or "",
+        "username": display or username,
+        "email": email,
         "provider": request.session.get("provider") or "",
-        "sub": request.session.get("sub") or "",
+        "sub": sub,
     }
 
 
@@ -662,6 +741,64 @@ def _require_auth(request: Request) -> RedirectResponse | None:
         return None
     return RedirectResponse("/login", status_code=302)
 
+
+@app.middleware("http")
+async def enforce_liability_ack(request: Request, call_next):
+    """Block API/mutations until the post-login risk dialog is accepted."""
+    try:
+        session = request.session
+    except AssertionError:
+        return await call_next(request)
+    if not bool(session.get("authenticated")):
+        return await call_next(request)
+    if _session_expired(request):
+        return await call_next(request)
+    if _liability_acknowledged(request):
+        return await call_next(request)
+    path = request.url.path or "/"
+    method = request.method or "GET"
+    if _liability_gate_allowed(path, method):
+        return await call_next(request)
+    if path.startswith("/api/") or path.startswith("/ws"):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Please accept the Hayabusa platform risk acknowledgment to continue.",
+                "code": "liability_ack_required",
+            },
+            status_code=403,
+        )
+    # Prefer setup when first-run is incomplete so the dialog appears there.
+    try:
+        home = "/setup" if not setup.completed() else "/"
+    except Exception:
+        home = "/"
+    return RedirectResponse(home, status_code=302)
+
+
+def _post_login_home() -> str:
+    """After sign-in: first-run setup for a fresh volume, otherwise the dashboard."""
+    return "/setup" if not setup.completed() else "/"
+
+
+def _require_setup_complete(request: Request) -> RedirectResponse | None:
+    """Gate protected HTML pages until the admin finishes /setup."""
+    if setup.completed():
+        return None
+    return RedirectResponse("/setup", status_code=302)
+
+
+def _can_manage_setup(request: Request) -> bool:
+    """First signer is bootstrap admin; only Owner/admins may complete or redo setup."""
+    if not _authed(request):
+        return False
+    key = _rbac_key(request)
+    rbac.ensure_bootstrap_admin(
+        username=request.session.get("username") or key,
+        email=request.session.get("email") or "",
+        sub=request.session.get("sub") or "",
+    )
+    return rbac.is_owner_or_admin(key)
 
 def _rbac_key(request: Request) -> str:
     u = _user(request)
@@ -716,6 +853,37 @@ def _require_any_perm(request: Request, *permissions: str) -> JSONResponse | Non
     )
 
 
+def _is_owner_or_admin(request: Request) -> bool:
+    if not _authed(request):
+        return False
+    key = _rbac_key(request)
+    rbac.ensure_bootstrap_admin(
+        username=request.session.get("username") or key,
+        email=request.session.get("email") or "",
+        sub=request.session.get("sub") or "",
+    )
+    return rbac.is_owner_or_admin(key)
+
+
+def _require_owner_or_admin(request: Request) -> JSONResponse | RedirectResponse | None:
+    """Administration surface — Owner/admin only."""
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=302)
+    if _is_owner_or_admin(request):
+        return None
+    path = request.url.path or "/"
+    if path.startswith("/api/"):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Administration is limited to Owners and admins",
+                "code": "admin_only",
+            },
+            status_code=403,
+        )
+    return RedirectResponse("/", status_code=302)
+
+
 def _can_read_secrets(request: Request) -> bool:
     key = _rbac_key(request)
     return rbac.has_permission(key, "read_secrets") or rbac.has_permission(key, "manage_secrets")
@@ -723,6 +891,32 @@ def _can_read_secrets(request: Request) -> bool:
 
 def _can_manage_secrets(request: Request) -> bool:
     return rbac.has_permission(_rbac_key(request), "manage_secrets")
+
+
+def _gitops_blocks_workspace_writes() -> JSONResponse | None:
+    if gitops.enabled():
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "GitOps mode is enabled — local Ansible/OpenTofu workspace is read-only. Edit the GitHub/GitLab repository instead.",
+                "code": "gitops_readonly",
+            },
+            status_code=409,
+        )
+    return None
+
+
+async def _push_gitops_config_to_hayabusa(*, trigger_pull: bool = False) -> dict[str, Any]:
+    """Push GitOps config (no secret values) to Hayabusa over the mesh bridge."""
+    payload = {
+        "type": "gitops.config.set",
+        "config": gitops.bridge_config_payload(),
+        "user": {},
+        "ts": int(time.time()),
+        "trigger_pull": bool(trigger_pull),
+    }
+    sent = await bridge.send_event(payload)
+    return {"sent": bool(sent), "enabled": gitops.enabled()}
 
 
 def _secrets_public_for_request(request: Request) -> dict[str, Any]:
@@ -786,19 +980,25 @@ async def _redeem_oauth_ticket(ticket: str, sig: str) -> dict[str, Any] | None:
 
 async def _finish_login(request: Request, *, username: str, email: str, provider: str, sub: str = "") -> RedirectResponse:
     now = int(time.time())
+    email_n = str(email or "").strip()
+    sub_n = str(sub or "").strip()
+    username_n = _human_login_name(username=str(username or "").strip(), email=email_n, sub=sub_n)
     request.session["authenticated"] = True
-    request.session["username"] = username
-    request.session["email"] = email
+    request.session["username"] = username_n
+    request.session["email"] = email_n
     request.session["provider"] = provider
-    request.session["sub"] = sub or username
+    request.session["sub"] = sub_n or username_n
     request.session["login_at"] = now
     request.session["can_manual_mesh_override"] = False
+    _liability_require_on_login(request)
     _session_begin(request)
     try:
         rbac.ensure_bootstrap_admin(
-            username=username,
-            email=email,
-            sub=sub or username,
+            username=username_n,
+            email=email_n,
+            sub=sub_n or username_n,
+            provider=str(provider or "").strip().lower(),
+            touch_activity=True,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("rbac bootstrap failed: %s", exc)
@@ -812,7 +1012,7 @@ async def _finish_login(request: Request, *, username: str, email: str, provider
         "on",
     }
     if skip_connect:
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse(_post_login_home(), status_code=302)
 
     async def _bg_connect() -> None:
         try:
@@ -826,7 +1026,7 @@ async def _finish_login(request: Request, *, username: str, email: str, provider
             await connection.set_step("enroll", "failed", str(exc)[:300])
 
     asyncio.create_task(_bg_connect())
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse(_post_login_home(), status_code=302)
 
 
 @app.get("/api/session/status")
@@ -841,9 +1041,35 @@ async def api_session_renew(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "authenticated": False, "code": "not_authenticated"}, status_code=401)
     _session_begin(request)
+    try:
+        rbac.ensure_bootstrap_admin(
+            username=request.session.get("username") or "",
+            email=request.session.get("email") or "",
+            sub=request.session.get("sub") or "",
+            provider=str(request.session.get("provider") or "").strip().lower(),
+            touch_activity=True,
+        )
+    except Exception:  # noqa: BLE001
+        pass
     payload = _session_status(request)
     payload["renewed"] = True
     return JSONResponse(payload)
+
+
+@app.post("/api/liability/acknowledge")
+async def api_liability_acknowledge(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"ok": False, "authenticated": False, "code": "not_authenticated"}, status_code=401)
+    request.session["liability_ack"] = True
+    request.session["liability_ack_at"] = int(time.time())
+    return JSONResponse(
+        {
+            "ok": True,
+            "authenticated": True,
+            "liability_acknowledged": True,
+            "liability_ack_at": request.session.get("liability_ack_at"),
+        }
+    )
 
 
 @app.get("/api/rbac")
@@ -857,34 +1083,157 @@ async def api_rbac_catalog(request: Request) -> JSONResponse:
         sub=request.session.get("sub") or "",
     )
     cat = rbac.public_catalog()
+    highest = rbac.highest_rank(key)
+    ceiling = rbac.grant_ceiling(key)
     cat["me"] = {
         "user_key": key,
+        "username": request.session.get("username") or "",
+        "email": request.session.get("email") or "",
+        "display_name": _human_login_name(
+            username=str(request.session.get("username") or ""),
+            email=str(request.session.get("email") or ""),
+            sub=str(request.session.get("sub") or ""),
+        ),
         "permissions": sorted(rbac.user_permissions(key)),
+        "highest_rank": highest,
+        "grant_ceiling": ceiling,
+        "grantable_roles": rbac.grantable_roles(key),
+        "can_manage_rbac": rbac.has_permission(key, "manage_rbac"),
+        "is_owner_or_admin": rbac.is_owner_or_admin(key),
+        "roles": rbac.user_roles(key),
     }
     return JSONResponse(cat)
 
 
-@app.post("/api/rbac/users")
-async def api_rbac_upsert_user(request: Request) -> JSONResponse:
+@app.put("/api/rbac/roles/order")
+async def api_rbac_reorder_roles(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
     denied = _require_perm(request, "manage_rbac")
     if denied:
         return denied
     body = await request.json()
     if not isinstance(body, dict):
         body = {}
-    return JSONResponse(
-        rbac.upsert_user(
-            username=str(body.get("username") or ""),
-            email=str(body.get("email") or ""),
-            sub=str(body.get("sub") or ""),
-            roles=list(body.get("roles") or []),
-            team_ids=list(body.get("team_ids") or []) if "team_ids" in body else None,
-        )
+    order = body.get("order") or body.get("roles") or []
+    if not isinstance(order, list):
+        return JSONResponse({"ok": False, "error": "order must be a list"}, status_code=400)
+    out = rbac.reorder_roles(actor_key=_rbac_key(request), order=[str(x) for x in order])
+    code = 200 if out.get("ok") else 400
+    if out.get("code") in {"forbidden", "forbidden_perm"}:
+        code = 403
+    if out.get("code") == "not_found":
+        code = 404
+    return JSONResponse(out, status_code=code)
+
+
+@app.post("/api/rbac/roles")
+async def api_rbac_create_role(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    denied = _require_perm(request, "manage_rbac")
+    if denied:
+        return denied
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    out = rbac.create_role(
+        actor_key=_rbac_key(request),
+        name=str(body.get("name") or body.get("id") or ""),
+        permissions=list(body.get("permissions") or []),
+        rank=body.get("rank"),
+        label=str(body.get("label") or ""),
     )
+    code = 200 if out.get("ok") else 400
+    if out.get("code") == "forbidden" or out.get("code") == "forbidden_perm":
+        code = 403
+    return JSONResponse(out, status_code=code)
+
+
+@app.patch("/api/rbac/roles/{role_name}")
+async def api_rbac_update_role(request: Request, role_name: str) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    denied = _require_perm(request, "manage_rbac")
+    if denied:
+        return denied
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    kwargs: dict[str, Any] = {
+        "actor_key": _rbac_key(request),
+        "name": role_name,
+    }
+    if "permissions" in body:
+        kwargs["permissions"] = list(body.get("permissions") or [])
+    if "rank" in body:
+        kwargs["rank"] = body.get("rank")
+    if "label" in body:
+        kwargs["label"] = str(body.get("label") or "")
+    out = rbac.update_role(**kwargs)
+    code = 200 if out.get("ok") else 400
+    if out.get("code") in {"forbidden", "forbidden_perm"}:
+        code = 403
+    if out.get("code") == "not_found":
+        code = 404
+    return JSONResponse(out, status_code=code)
+
+
+@app.delete("/api/rbac/roles/{role_name}")
+async def api_rbac_delete_role(request: Request, role_name: str) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    denied = _require_perm(request, "manage_rbac")
+    if denied:
+        return denied
+    out = rbac.delete_role(actor_key=_rbac_key(request), name=role_name)
+    code = 200 if out.get("ok") else 400
+    if out.get("code") == "forbidden":
+        code = 403
+    if out.get("code") == "not_found":
+        code = 404
+    return JSONResponse(out, status_code=code)
+
+
+@app.post("/api/rbac/users")
+async def api_rbac_upsert_user(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    denied = _require_perm(request, "manage_rbac")
+    if denied:
+        return denied
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    roles = body.get("roles")
+    if isinstance(roles, str):
+        roles = [roles]
+    out = rbac.upsert_user(
+        username=str(body.get("username") or ""),
+        email=str(body.get("email") or ""),
+        sub=str(body.get("sub") or ""),
+        roles=list(roles) if isinstance(roles, list) else None,
+        team_ids=list(body.get("team_ids") or []) if "team_ids" in body else None,
+        actor_key=_rbac_key(request),
+        user_key=str(body.get("user_key") or ""),
+        provider=str(body.get("provider") or ""),
+    )
+    code = 200 if out.get("ok") else 400
+    if out.get("code") in {"forbidden", "forbidden_role"}:
+        code = 403
+    return JSONResponse(out, status_code=code)
 
 
 @app.post("/api/rbac/teams")
 async def api_rbac_create_team(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
     denied = _require_perm(request, "manage_rbac")
     if denied:
         return denied
@@ -929,6 +1278,15 @@ async def api_rbac_playbook_owner(request: Request) -> JSONResponse:
 @app.post("/api/playbooks/sync-hayabusa")
 async def api_playbooks_sync_hayabusa(request: Request) -> JSONResponse:
     """Push owned playbooks (secret names only) to this user's Hayabusa workspace via mesh bridge."""
+    if gitops.enabled():
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "GitOps mode is enabled — playbooks sync from GitHub/GitLab via Hayabusa, not from the local workspace.",
+                "code": "gitops_enabled",
+            },
+            status_code=409,
+        )
     denied = _require_perm(request, "sync_hayabusa")
     if denied:
         # allow read_all as well
@@ -974,6 +1332,300 @@ async def api_playbooks_sync_hayabusa(request: Request) -> JSONResponse:
     )
 
 
+@app.get("/api/gitops/config")
+async def api_gitops_config_get(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    out = gitops.public_config()
+    # Hint webhook URL for admins (Hayabusa public base if known).
+    st = bridge.status()
+    mesh_hint = str((st or {}).get("ws_url") or "")
+    out["webhook_paths"] = {
+        "github": "/api/gitops/webhook/github",
+        "gitlab": "/api/gitops/webhook/gitlab",
+    }
+    out["webhook_note"] = (
+        "Register the webhook on your GitHub/GitLab repo pointing at your Hayabusa hub URL "
+        "+ the path above. Use the vault webhook secret value as the webhook secret / token."
+    )
+    out["bridge_connected"] = bool((st or {}).get("connected") and (st or {}).get("granted"))
+    out["can_manage"] = rbac.has_permission(_rbac_key(request), "manage_gitops") or rbac.has_permission(
+        _rbac_key(request), "manage_rbac"
+    )
+    out["mesh_ws_hint"] = mesh_hint[:200]
+    return JSONResponse(out)
+
+
+@app.put("/api/gitops/config")
+async def api_gitops_config_put(request: Request) -> JSONResponse:
+    denied = _require_perm(request, "manage_gitops")
+    if denied:
+        if not rbac.has_permission(_rbac_key(request), "manage_rbac"):
+            return denied
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    # Validate secret keys exist when enabling
+    if body.get("enabled"):
+        for field in ("auth_secret_key", "webhook_secret_key"):
+            sk = str(body.get(field) or "").strip()
+            if sk and vault.get(sk) is None:
+                return JSONResponse(
+                    {"ok": False, "error": f"vault secret not found: {sk}", "code": "secret_missing", "field": field},
+                    status_code=400,
+                )
+    out = gitops.update(body, updated_by=_rbac_key(request))
+    if not out.get("ok"):
+        return JSONResponse(out, status_code=400)
+    push = await _push_gitops_config_to_hayabusa(trigger_pull=bool(out.get("enabled")))
+    out["hayabusa_push"] = push
+    if out.get("enabled") and not push.get("sent"):
+        out["warning"] = "Config saved locally, but Hayabusa bridge is disconnected — push will retry on Sync now."
+    return JSONResponse(out)
+
+
+@app.post("/api/gitops/test")
+async def api_gitops_test(request: Request) -> JSONResponse:
+    denied = _require_perm(request, "manage_gitops")
+    if denied:
+        if not rbac.has_permission(_rbac_key(request), "manage_rbac"):
+            return denied
+    cfg = gitops.get()
+    auth_key = str(cfg.get("auth_secret_key") or "").strip()
+    if not auth_key:
+        return JSONResponse({"ok": False, "error": "auth_secret_key not configured"}, status_code=400)
+    token = vault.get(auth_key)
+    if not token:
+        return JSONResponse({"ok": False, "error": "auth vault secret missing or empty"}, status_code=400)
+    provider = str(cfg.get("provider") or "github")
+    base = str(cfg.get("base_url") or "").rstrip("/")
+    repo = str(cfg.get("repo") or "").strip("/")
+    if not repo:
+        return JSONResponse({"ok": False, "error": "repo not configured"}, status_code=400)
+    headers = {"Accept": "application/json", "User-Agent": "hayabusa-controller-gitops"}
+    try:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+            if provider == "gitlab":
+                # GitLab API: /api/v4/projects/:id — project path URL-encoded
+                api_base = base
+                if "gitlab.com" in base or base.endswith("/gitlab"):
+                    pass
+                # Self-hosted and gitlab.com both expose /api/v4
+                project = urllib.parse.quote(repo, safe="")
+                url = f"{api_base}/api/v4/projects/{project}"
+                headers["PRIVATE-TOKEN"] = token
+            else:
+                # GitHub API (cloud or GHE): derive api host
+                if "github.com" in base:
+                    url = f"https://api.github.com/repos/{repo}"
+                else:
+                    url = f"{base}/api/v3/repos/{repo}"
+                headers["Authorization"] = f"Bearer {token}"
+            resp = await client.get(url, headers=headers)
+            if resp.status_code >= 400:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": f"remote returned HTTP {resp.status_code}",
+                        "detail": (resp.text or "")[:300],
+                        "url": url,
+                    },
+                    status_code=400,
+                )
+            data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            name = ""
+            if isinstance(data, dict):
+                name = str(data.get("full_name") or data.get("path_with_namespace") or data.get("name") or "")
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "reachable": True,
+                    "provider": provider,
+                    "repo": repo,
+                    "remote_name": name,
+                    "message": "Repository reachable with the configured token.",
+                }
+            )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)[:300]}, status_code=400)
+
+
+@app.post("/api/gitops/sync-now")
+async def api_gitops_sync_now(request: Request) -> JSONResponse:
+    denied = _require_perm(request, "manage_gitops")
+    if denied:
+        if not rbac.has_permission(_rbac_key(request), "manage_rbac"):
+            return denied
+    if not gitops.enabled():
+        return JSONResponse({"ok": False, "error": "GitOps is not enabled"}, status_code=400)
+    push = await _push_gitops_config_to_hayabusa(trigger_pull=False)
+    if not push.get("sent"):
+        return JSONResponse(
+            {"ok": False, "error": "Controller is not connected to Hayabusa over the mesh bridge", "code": "bridge_disconnected"},
+            status_code=503,
+        )
+    sent = await bridge.send_event(
+        {
+            "type": "gitops.pull",
+            "config": gitops.bridge_config_payload(),
+            "source": "controller_sync_now",
+            "ts": int(time.time()),
+        }
+    )
+    if not sent:
+        return JSONResponse({"ok": False, "error": "failed to send gitops.pull", "code": "bridge_disconnected"}, status_code=503)
+    return JSONResponse({"ok": True, "message": "Pull requested on Hayabusa", "config_pushed": True})
+
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page(request: Request) -> HTMLResponse:
+    """One-time first-run wizard — admin only; inaccessible after completion."""
+    redir = _require_auth(request)
+    if redir:
+        return redir
+    if setup.completed():
+        return RedirectResponse("/", status_code=302)
+    # Ensure first signer is bootstrap admin before rendering.
+    _can_manage_setup(request)
+    return TEMPLATES.TemplateResponse(
+        request,
+        "setup.html",
+        {
+            "user": _user(request),
+            "csrf_token": ctrl_security.ensure_csrf_token(request.session),
+            "can_manage": _can_manage_setup(request),
+        },
+    )
+
+
+@app.get("/api/setup/status")
+async def api_setup_status(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    out = setup.public_status()
+    out["can_manage"] = _can_manage_setup(request)
+    return JSONResponse(out)
+
+
+@app.post("/api/setup/reset")
+async def api_setup_reset(request: Request) -> JSONResponse:
+    """Admin-only: clear first-run completion so the setup wizard can be run again."""
+    if not _authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not _can_manage_setup(request):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "only administrators can redo first-run setup",
+                "code": "forbidden",
+            },
+            status_code=403,
+        )
+    actor = str(request.session.get("username") or request.session.get("email") or "")[:128]
+    out = setup.reset(reset_by=actor)
+    out["redirect"] = "/setup"
+    return JSONResponse(out)
+
+
+@app.post("/api/setup/complete")
+async def api_setup_complete(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if setup.completed():
+        return JSONResponse(
+            {"ok": False, "error": "setup already completed", "code": "already_complete"},
+            status_code=409,
+        )
+    if not _can_manage_setup(request):
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "only the administrator can complete first-run setup",
+                "code": "forbidden",
+            },
+            status_code=403,
+        )
+    body = await request.json()
+    if not isinstance(body, dict):
+        body = {}
+    mode = str(body.get("mode") or "").strip().lower()
+    actor = _rbac_key(request)
+
+    if mode == "novice":
+        # Keep GitOps off; seed local Ansible/OpenTofu defaults.
+        if gitops.enabled():
+            gitops.update({"enabled": False}, updated_by=actor)
+        devops.seed_from_defaults()
+        out = setup.mark_complete(mode="novice", completed_by=actor)
+        return JSONResponse(out)
+
+    if mode != "advanced":
+        return JSONResponse(
+            {"ok": False, "error": "mode must be novice or advanced", "code": "invalid_mode"},
+            status_code=400,
+        )
+
+    auth_key = str(body.get("auth_secret_key") or "gitops_github_pat").strip()
+    webhook_key = str(body.get("webhook_secret_key") or "gitops_webhook_secret").strip()
+    auth_token = str(body.get("auth_token") or "")
+    webhook_secret = str(body.get("webhook_secret") or "")
+    if not auth_token.strip():
+        return JSONResponse(
+            {"ok": False, "error": "auth_token is required", "code": "missing_token"},
+            status_code=400,
+        )
+    if not webhook_secret.strip():
+        return JSONResponse(
+            {"ok": False, "error": "webhook_secret is required", "code": "missing_webhook_secret"},
+            status_code=400,
+        )
+    try:
+        vault.put(
+            auth_key,
+            auth_token,
+            category="gitops",
+            kind="token",
+            label="GitOps auth token (setup)",
+            updated_by=actor,
+        )
+        vault.put(
+            webhook_key,
+            webhook_secret,
+            category="gitops",
+            kind="webhook_secret",
+            label="GitOps webhook secret (setup)",
+            updated_by=actor,
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    provider = str(body.get("provider") or "github").strip().lower() or "github"
+    git_body = {
+        "enabled": True,
+        "provider": provider,
+        "base_url": str(body.get("base_url") or "").strip(),
+        "repo": str(body.get("repo") or "").strip(),
+        "ref": str(body.get("ref") or "main").strip() or "main",
+        "path_prefix": str(body.get("path_prefix") or "").strip(),
+        "auth_secret_key": auth_key,
+        "webhook_secret_key": webhook_key,
+        "poll_seconds": body.get("poll_seconds") or 600,
+    }
+    gout = gitops.update(git_body, updated_by=actor)
+    if not gout.get("ok"):
+        return JSONResponse(gout, status_code=400)
+    push = await _push_gitops_config_to_hayabusa(trigger_pull=True)
+    out = setup.mark_complete(mode="advanced", completed_by=actor)
+    out["gitops"] = gout
+    out["hayabusa_push"] = push
+    if not push.get("sent"):
+        out["warning"] = (
+            "Setup saved. Hayabusa bridge is not connected yet — GitOps config will push when the mesh is up "
+            "(use Sync now on the GitOps tab)."
+        )
+    return JSONResponse(out)
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, Any]:
     vpn_st = vpn.status()
@@ -1008,7 +1660,7 @@ async def healthz() -> dict[str, Any]:
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> HTMLResponse:
     if _authed(request):
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse(_post_login_home(), status_code=302)
     # Broker mode: IdP apps live on Hayabusa — never require local client secrets.
     if _oauth_broker_mode():
         any_oauth = True
@@ -1340,9 +1992,10 @@ async def auth_oauth_finish(request: Request) -> RedirectResponse:
             break
     if state and not matched:
         return RedirectResponse("/login?error=Invalid%20OAuth%20state", status_code=302)
-    username = str(body.get("username") or body.get("email") or "user").strip()
+    username = str(body.get("username") or "").strip()
     email = str(body.get("email") or "").strip()
-    sub = str(body.get("oauth_id") or username).strip()
+    sub = str(body.get("oauth_id") or body.get("sub") or "").strip()
+    username = _human_login_name(username=username, email=email, sub=sub)
     return await _finish_login(request, username=username, email=email, provider=provider or "oauth", sub=sub)
 
 
@@ -1415,12 +2068,13 @@ async def _oauth_callback(request: Request, provider: str) -> RedirectResponse:
         or profile.get("name")
         or profile.get("username")
         or profile.get("global_name")
-        or "user"
+        or ""
     )
     email = profile.get("email") or ""
     if provider == "discord" and not email and profile.get("id"):
         email = f"{profile.get('id')}@discord.local"
-    sub = str(profile.get("sub") or profile.get("id") or username)
+    sub = str(profile.get("sub") or profile.get("id") or "").strip()
+    username = _human_login_name(username=str(username or ""), email=str(email or ""), sub=sub)
     return await _finish_login(
         request,
         username=str(username),
@@ -1493,6 +2147,9 @@ async def dashboard(request: Request) -> HTMLResponse:
     redir = _require_auth(request)
     if redir:
         return redir
+    setup_redir = _require_setup_complete(request)
+    if setup_redir:
+        return setup_redir
     # Best-effort refresh so permission changes on Hayabusa show up without re-login.
     try:
         await _refresh_user_capabilities(request)
@@ -1503,6 +2160,12 @@ async def dashboard(request: Request) -> HTMLResponse:
     br = bridge.status()
     loc = await asyncio.to_thread(discover_wan_public_identity)
     public_ip = str(br.get("public_ip") or loc.get("public_ip") or loc.get("wan_public_ip") or "")
+    key = _rbac_key(request)
+    rbac.ensure_bootstrap_admin(
+        username=request.session.get("username") or key,
+        email=request.session.get("email") or "",
+        sub=request.session.get("sub") or "",
+    )
     return TEMPLATES.TemplateResponse(
         request,
         "dashboard.html",
@@ -1515,6 +2178,33 @@ async def dashboard(request: Request) -> HTMLResponse:
             "hayabusa_public_url": _settings.hayabusa_public_url,
             "can_manual_mesh_override": _session_can_manual_mesh_override(request),
             "public_ip": public_ip,
+            "is_owner_or_admin": rbac.is_owner_or_admin(key),
+        },
+    )
+
+
+@app.get("/administration", response_class=HTMLResponse)
+async def administration_page(request: Request) -> HTMLResponse:
+    """Owner/admin-only: roles, users, teams, site name, setup redo."""
+    redir = _require_auth(request)
+    if redir:
+        return redir
+    setup_redir = _require_setup_complete(request)
+    if setup_redir:
+        return setup_redir
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
+    try:
+        await _refresh_user_capabilities(request)
+    except Exception:  # noqa: BLE001
+        pass
+    return TEMPLATES.TemplateResponse(
+        request,
+        "administration.html",
+        {
+            "user": _user(request),
+            "hayabusa_public_url": _settings.hayabusa_public_url,
         },
     )
 
@@ -1524,6 +2214,9 @@ async def devops_iac_page(request: Request) -> HTMLResponse:
     redir = _require_auth(request)
     if redir:
         return redir
+    setup_redir = _require_setup_complete(request)
+    if setup_redir:
+        return setup_redir
     devops.seed_from_defaults()
     return TEMPLATES.TemplateResponse(request, "devops_iac.html", {"user": _user(request)})
 
@@ -1534,6 +2227,9 @@ async def image_nest_page(request: Request) -> HTMLResponse:
     redir = _require_auth(request)
     if redir:
         return redir
+    setup_redir = _require_setup_complete(request)
+    if setup_redir:
+        return setup_redir
     key = _rbac_key(request)
     rbac.ensure_bootstrap_admin(
         username=request.session.get("username") or key,
@@ -1779,7 +2475,11 @@ async def api_image_nest_registry_ref(ref: str, request: Request) -> JSONRespons
 async def api_devops_whoami(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-    return JSONResponse(devops.whoami(username=_user(request).get("username") or "controller"))
+    out = devops.whoami(username=_user(request).get("username") or "controller")
+    if isinstance(out, dict):
+        out["gitops_enabled"] = gitops.enabled()
+        out["local_workspace_writable"] = not gitops.enabled()
+    return JSONResponse(out)
 
 
 @app.get("/api/devops-iac/ls")
@@ -1811,6 +2511,9 @@ async def api_devops_file_get(request: Request) -> JSONResponse:
 async def api_devops_file_post(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    blocked = _gitops_blocks_workspace_writes()
+    if blocked:
+        return blocked
     body = await request.json()
     try:
         rel_path = str(body.get("path") or "")
@@ -1842,6 +2545,9 @@ async def api_devops_file_post(request: Request) -> JSONResponse:
 async def api_devops_mkdir(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    blocked = _gitops_blocks_workspace_writes()
+    if blocked:
+        return blocked
     body = await request.json()
     try:
         out = devops.mkdir(str(body.get("path") or ""))
@@ -1854,6 +2560,9 @@ async def api_devops_mkdir(request: Request) -> JSONResponse:
 async def api_devops_mv(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    blocked = _gitops_blocks_workspace_writes()
+    if blocked:
+        return blocked
     body = await request.json()
     try:
         out = devops.mv(str(body.get("src") or body.get("from") or ""), str(body.get("dst") or body.get("to") or ""))
@@ -1867,6 +2576,9 @@ async def api_devops_mv(request: Request) -> JSONResponse:
 async def api_devops_rm(request: Request) -> JSONResponse:
     if not _authed(request):
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    blocked = _gitops_blocks_workspace_writes()
+    if blocked:
+        return blocked
     body = await request.json()
     try:
         out = devops.rm(str(body.get("path") or ""))
@@ -1994,6 +2706,192 @@ async def api_lan_telemetry(request: Request) -> JSONResponse:
     return JSONResponse(lan_discover.build_telemetry())
 
 
+def _guacamole_internal_base() -> str:
+    base = (os.environ.get("CONTROLLER_GUACAMOLE_INTERNAL_URL") or "http://127.0.0.1:9000").rstrip("/")
+    if base.endswith("/guacamole"):
+        return base
+    return f"{base}/guacamole"
+
+
+def _guacamole_internal_target(subpath: str) -> str:
+    base = _guacamole_internal_base()
+    sub = (subpath or "").lstrip("/")
+    if not sub:
+        return f"{base}/"
+    return f"{base}/{sub}"
+
+
+def _guacamole_rewrite_html(body: bytes) -> bytes:
+    try:
+        text = body.decode("utf-8", errors="replace")
+    except Exception:
+        return body
+    text = re.sub(r'<base\s+href=["\']/guacamole/["\']\s*/?>', '<base href="/guacamole/">', text, count=1, flags=re.I)
+    text = re.sub(r'<base\s+href=["\']/["\']\s*/?>', '<base href="/guacamole/">', text, count=1, flags=re.I)
+    if '<base href="/guacamole/">' not in text:
+        text = text.replace("<head>", '<head><base href="/guacamole/">', 1)
+    internal = _guacamole_internal_base()
+    text = text.replace(internal, "/guacamole")
+    text = text.replace("http://127.0.0.1:9000/guacamole", "/guacamole")
+    return text.encode("utf-8")
+
+
+@app.api_route(
+    "/guacamole/",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+)
+@app.api_route(
+    "/guacamole/{subpath:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+)
+async def guacamole_proxy(request: Request, subpath: str = "") -> Response:
+    """Same-origin reverse proxy for Apache Guacamole on this controller node."""
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=302)
+    if (request.headers.get("upgrade") or "").lower() == "websocket":
+        return HTMLResponse(
+            "WebSocket tunnel is not available through this path; Guacamole will use HTTP tunnel.",
+            status_code=426,
+        )
+    import urllib.error
+    import urllib.request
+
+    target = _guacamole_internal_target(subpath)
+    data = await request.body() if request.method not in {"GET", "HEAD", "OPTIONS"} else None
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length", "connection", "accept-encoding"}
+    }
+    headers["Host"] = urllib.parse.urlparse(
+        os.environ.get("CONTROLLER_GUACAMOLE_INTERNAL_URL") or "http://127.0.0.1:9000"
+    ).netloc
+    req = urllib.request.Request(target, data=data, headers=headers, method=request.method)
+
+    def _fetch() -> tuple[int, bytes, Any]:
+        try:
+            upstream = urllib.request.urlopen(req, timeout=60)
+            return upstream.status, upstream.read(), upstream.headers
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read(), exc.headers
+
+    try:
+        status_code, body, upstream_headers = await asyncio.to_thread(_fetch)
+    except Exception as exc:  # noqa: BLE001
+        return HTMLResponse(f"Guacamole proxy error: {exc}", status_code=502)
+
+    content_type = upstream_headers.get("Content-Type", "application/octet-stream") if upstream_headers else "application/octet-stream"
+    if "text/html" in str(content_type).lower():
+        body = _guacamole_rewrite_html(body)
+    resp = Response(content=body, status_code=status_code, media_type=content_type)
+    if "text/html" in str(content_type).lower():
+        resp.headers["Cache-Control"] = "no-store"
+    location = upstream_headers.get("Location") if upstream_headers else None
+    if location:
+        internal = _guacamole_internal_base()
+        resp.headers["Location"] = str(location).replace(internal, "/guacamole").replace(
+            "http://127.0.0.1:9000/guacamole", "/guacamole"
+        )
+    resp.headers.pop("x-frame-options", None)
+    return resp
+
+
+@app.get("/console/guacamole/embed", response_class=HTMLResponse)
+async def console_guacamole_embed(request: Request) -> HTMLResponse:
+    if not _authed(request):
+        return RedirectResponse("/login", status_code=302)
+    from . import guacamole_sync, lan_discover
+
+    user = _user(request)
+    account_id = str(user.get("sub") or user.get("email") or user.get("username") or "controller").strip()
+    try:
+        inv = await asyncio.to_thread(lan_discover.build_inventory, probe=False)
+        data = await asyncio.to_thread(
+            guacamole_sync.guacamole_sync_for_user,
+            account_id=account_id,
+            display_name=str(user.get("username") or ""),
+            vault=vault,
+            data_dir=str(_settings.data_dir),
+            lan_hosts=list(inv.get("hosts") or []),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("guacamole embed sync failed")
+        return HTMLResponse(f"Guacamole setup failed: {exc}", status_code=502)
+    token = data.get("authToken")
+    if not token:
+        return RedirectResponse("/guacamole/", status_code=302)
+    auth_obj = {
+        "authToken": token,
+        "username": data.get("username"),
+        "dataSource": data.get("dataSource") or "postgresql",
+        "availableDataSources": data.get("availableDataSources") or ["postgresql"],
+    }
+    auth_js = json.dumps(auth_obj)
+    html = (
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Console</title></head><body>"
+        "<p style=\"font-family:sans-serif\">Opening controller console…</p><script>"
+        "try{localStorage.setItem('GUAC_AUTH',"
+        + auth_js
+        + ");}catch(e){}"
+        "window.location.replace('/guacamole/');"
+        "</script></body></html>"
+    )
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
+@app.api_route("/api/console/guacamole/bootstrap", methods=["GET", "POST"])
+async def guacamole_console_bootstrap(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"success": False, "error": "unauthorized"}, status_code=401)
+    from . import guacamole_sync, lan_discover
+
+    user = _user(request)
+    account_id = str(user.get("sub") or user.get("email") or user.get("username") or "controller").strip()
+    try:
+        inv = await asyncio.to_thread(lan_discover.build_inventory, probe=False)
+        data = await asyncio.to_thread(
+            guacamole_sync.guacamole_sync_for_user,
+            account_id=account_id,
+            display_name=str(user.get("username") or ""),
+            vault=vault,
+            data_dir=str(_settings.data_dir),
+            lan_hosts=list(inv.get("hosts") or []),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("guacamole bootstrap failed")
+        return JSONResponse({"success": False, "error": str(exc), "synced": False}, status_code=500)
+    if not data.get("success"):
+        return JSONResponse(data, status_code=502)
+    return JSONResponse(
+        {
+            "success": True,
+            "synced": bool(data.get("synced")),
+            "username": data.get("username"),
+            "connections": data.get("connections") or [],
+            "url": "/guacamole/",
+            "embed_url": "/console/guacamole/embed",
+        }
+    )
+
+
+@app.get("/api/console/guacamole/status")
+async def guacamole_console_status(request: Request) -> JSONResponse:
+    if not _authed(request):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    from . import guacamole_sync
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "provider": "apache-guacamole",
+            "url": "/guacamole/",
+            "embed_url": "/console/guacamole/embed",
+            "sync_enabled": guacamole_sync.guacamole_sync_enabled(),
+            "location": "controller",
+        }
+    )
+
+
 @app.get("/api/ztp/status")
 async def api_ztp_status(request: Request) -> JSONResponse:
     if not _authed(request):
@@ -2095,6 +2993,9 @@ async def api_controller_site_name_get(request: Request) -> JSONResponse:
 
 @app.post("/api/controller/site-name")
 async def api_controller_site_name_set(request: Request) -> JSONResponse:
+    admin_gate = _require_owner_or_admin(request)
+    if isinstance(admin_gate, (JSONResponse, RedirectResponse)):
+        return admin_gate
     denied = _require_perm(request, "manage_rbac")
     if denied:
         return denied
@@ -2370,8 +3271,10 @@ async def api_jobs_approve(job_id: str, request: Request) -> JSONResponse:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     job = job_queue.get(job_id)
     kind = str((job or {}).get("kind") or "").strip().lower()
-    perm = "approve_ztp" if kind in ZTP_JOB_KINDS else "approve_playbooks"
-    denied = _require_perm(request, perm)
+    if kind in ZTP_JOB_KINDS:
+        denied = _require_perm(request, "approve_ztp")
+    else:
+        denied = _require_any_perm(request, "approve_jobs", "approve_playbooks")
     if denied:
         return denied
     u = _user(request)
@@ -2396,8 +3299,10 @@ async def api_jobs_deny(job_id: str, request: Request) -> JSONResponse:
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     job = job_queue.get(job_id)
     kind = str((job or {}).get("kind") or "").strip().lower()
-    perm = "approve_ztp" if kind in ZTP_JOB_KINDS else "approve_playbooks"
-    denied = _require_perm(request, perm)
+    if kind in ZTP_JOB_KINDS:
+        denied = _require_perm(request, "approve_ztp")
+    else:
+        denied = _require_any_perm(request, "approve_jobs", "approve_playbooks")
     if denied:
         return denied
     body = {}
