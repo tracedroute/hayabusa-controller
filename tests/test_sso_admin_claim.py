@@ -219,6 +219,36 @@ class FinishLoginClaimLogicTests(unittest.TestCase):
         self.assertIn("/login", loc)
         self.assertIn("error=", loc)
 
+    def test_google_signin_allowed_without_amr_attestation(self) -> None:
+        self.main.auth_settings.mark_sso_admin_claimed(updated_by="seed")
+        self.main.auth_settings.set_require_2fa(True, updated_by="seed")
+        self.main.signin_allowlist.add_identity(
+            provider="google",
+            email="swoopingbird236@gmail.com",
+            username="swoopingbird236@gmail.com",
+            oauth_id="106972003539274694999",
+            updated_by="seed",
+        )
+
+        async def _run() -> str:
+            with patch.object(self.main, "_session_begin", lambda *_a, **_k: None):
+                with patch.object(self.main, "_liability_require_on_login", lambda *_a, **_k: None):
+                    with patch.object(self.main.bridge, "send_event", new=AsyncMock(return_value=True)):
+                        resp = await self.main._finish_login(
+                            self._req({}),
+                            username="swoopingbird236@gmail.com",
+                            email="swoopingbird236@gmail.com",
+                            provider="google",
+                            sub="106972003539274694999",
+                            mfa_ok=False,
+                            mfa_checked=True,
+                        )
+            return str(resp.headers.get("location") or "")
+
+        loc = asyncio.run(_run())
+        self.assertNotIn("multi-factor", loc)
+        self.assertNotIn("error=", loc)
+
 
 class GitopsWebhookHardenTests(unittest.TestCase):
     def test_verify_rejects_weak_secret(self) -> None:

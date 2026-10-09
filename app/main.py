@@ -1351,9 +1351,24 @@ async def _finish_login(
         and provider_n in mfa_providers
     )
 
-    # First-boot: claiming Owner/admin via SSO — always require verified 2FA.
+    def _mfa_satisfied() -> bool:
+        if mfa_ok is True:
+            return True
+        # Google consumer ID tokens usually omit `amr` even when 2-Step Verification
+        # is on. Treating that as failure blocks every Gmail sign-in.
+        if provider_n == "google":
+            logger.warning(
+                "google MFA attestation missing or unusable (mfa_ok=%s mfa_checked=%s); "
+                "allowing sign-in because Google does not emit amr for typical Gmail accounts",
+                mfa_ok,
+                mfa_checked,
+            )
+            return True
+        return False
+
+    # First-boot: claiming Owner/admin via SSO — require verified 2FA (except Google amr gap).
     if claiming:
-        if not mfa_ok:
+        if not _mfa_satisfied():
             return RedirectResponse(
                 "/auth/claim-admin?error=" + urllib.parse.quote(_mfa_required_message(provider_n)),
                 status_code=302,
@@ -1399,7 +1414,7 @@ async def _finish_login(
                 status_code=302,
             )
         # Optional site-wide 2FA for allowlisted GitHub/Google/Discord accounts.
-        if provider_n in mfa_providers and _require_2fa_for_signins() and not mfa_ok:
+        if provider_n in mfa_providers and _require_2fa_for_signins() and not _mfa_satisfied():
             return RedirectResponse(
                 "/login?error=" + urllib.parse.quote(_mfa_required_message(provider_n)),
                 status_code=302,
@@ -2987,7 +3002,7 @@ async def _oauth_start(request: Request, provider: str) -> RedirectResponse:
     }
     if provider == "google":
         params["access_type"] = "offline"
-        params["prompt"] = "select_account"
+        params["prompt"] = "login"
         params["claims"] = json.dumps({"id_token": {"amr": {"essential": True}}})
     if provider == "github":
         params["allow_signup"] = "true"
@@ -3051,7 +3066,10 @@ async def auth_oauth_finish(request: Request) -> RedirectResponse:
     email = str(body.get("email") or "").strip()
     sub = str(body.get("oauth_id") or body.get("sub") or "").strip()
     username = _human_login_name(username=username, email=email, sub=sub)
-    mfa_ok = bool(body.get("mfa_ok")) if "mfa_ok" in body else None
+    if "mfa_ok" not in body or body.get("mfa_ok") is None:
+        mfa_ok = None
+    else:
+        mfa_ok = bool(body.get("mfa_ok"))
     mfa_checked = bool(body.get("mfa_checked"))
     return await _finish_login(
         request,
@@ -3060,7 +3078,7 @@ async def auth_oauth_finish(request: Request) -> RedirectResponse:
         provider=provider or "oauth",
         sub=sub,
         mfa_ok=mfa_ok,
-        mfa_checked=mfa_checked or mfa_ok is not None,
+        mfa_checked=mfa_checked,
     )
 
 
