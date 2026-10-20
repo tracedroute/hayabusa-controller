@@ -22,7 +22,8 @@ logger = logging.getLogger("hayabusa-controller.job_queue")
 _LOCK = threading.RLock()
 MAX_JOBS = 200
 DEFAULT_TTL_SEC = 24 * 3600
-HYDRATED_TTL_SEC = 15 * 60
+HYDRATED_TTL_SEC = 60 * 60
+RELAY_DEADLINE_SEC = 6 * 60 * 60
 
 
 def _now() -> float:
@@ -135,6 +136,7 @@ class JobQueue:
                 "secret_keys": (job.get("params") or {}).get("secret_keys") or [],
                 "timeout_sec": (job.get("params") or {}).get("timeout_sec") or 300,
                 "execute_on": (job.get("params") or {}).get("execute_on") or "hayabusa",
+                "workspace_root": (job.get("params") or {}).get("workspace_root") or "",
                 "extra_files": (job.get("params") or {}).get("extra_files") or [],
                 "metadata": (
                     (job.get("params") or {}).get("metadata")
@@ -338,6 +340,30 @@ class JobQueue:
             self._save(state)
             return {"ok": True, **self._public(job)}
 
+    def extend_relay(self, job_id: str, seconds: int = HYDRATED_TTL_SEC) -> None:
+        """Keep an in-progress Core run from expiring while lan.relay is in use."""
+        jid = str(job_id or "").strip()
+        if not jid:
+            return
+        with _LOCK:
+            state = self._load()
+            job = state["jobs"].get(jid)
+            if not isinstance(job, dict):
+                return
+            if str(job.get("status") or "") not in {"approved", "running", "hydrated"}:
+                return
+            now = _now()
+            deadline = float(job.get("relay_deadline") or 0) or (now + RELAY_DEADLINE_SEC)
+            until = min(now + max(60, min(int(seconds), HYDRATED_TTL_SEC)), deadline)
+            if until <= float(job.get("relay_until") or 0):
+                return
+            job["relay_until"] = until
+            job["hydrated_until"] = until
+            job["relay_deadline"] = deadline
+            job["updated_at"] = now
+            state["jobs"][jid] = job
+            self._save(state)
+
     def is_approved_for_relay(self, job_id: str) -> bool:
         """True when LAN Approve granted Core permission to use lan.relay for this job."""
         jid = str(job_id or "").strip()
@@ -453,6 +479,7 @@ class JobQueue:
             job["lan_approved"] = True
             job["relay_until"] = _now() + HYDRATED_TTL_SEC
             job["hydrated_until"] = job["relay_until"]
+            job["relay_deadline"] = _now() + RELAY_DEADLINE_SEC
             job["approved_by"] = (
                 approved_by if isinstance(approved_by, dict) else job.get("approved_by") or {}
             )

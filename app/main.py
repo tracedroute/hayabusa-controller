@@ -491,7 +491,11 @@ async def _boot_mesh_control_plane() -> None:
             chosen or "(none)",
         )
         if chosen:
-            bridge.set_ws_urls(chosen)
+            # Mesh stays primary. If that TCP path fails, use the configured public WSS.
+            public_fallback = public_ws or (os.environ.get("HAYABUSA_WS_URL") or "").strip()
+            if public_fallback == chosen:
+                public_fallback = ""
+            bridge.set_ws_urls(chosen, fallback=public_fallback)
         # Keep the configured bridge token for a reliable authenticated boot
         # reconnect. Mesh membership remains the primary transport boundary.
         bridge._bridge_token = (_settings.controller_bridge_token or "").strip()
@@ -5126,7 +5130,7 @@ async def api_jobs_get(job_id: str, request: Request) -> JSONResponse:
 
 @app.post("/api/jobs/{job_id}/approve")
 async def api_jobs_approve(job_id: str, request: Request) -> JSONResponse:
-    """On-LAN approval: hydrate secrets and run Ansible/OpenTofu on this controller (Core never receives vault values)."""
+    """On-LAN approval. Core runs Ansible/OpenTofu; this controller only relays secret names."""
     if not _authed(request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     job = job_queue.get(job_id)

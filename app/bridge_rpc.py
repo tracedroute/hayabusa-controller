@@ -101,6 +101,7 @@ class BridgeRpcHandler:
             job_approved=lambda jid: bool(
                 self._job_queue is not None and self._job_queue.is_approved_for_relay(jid)
             ),
+            job_touch=lambda jid: self._job_queue.extend_relay(jid) if self._job_queue is not None else None,
         )
 
     def set_job_queue(self, job_queue: Any | None) -> None:
@@ -230,6 +231,12 @@ class BridgeRpcHandler:
                 return await asyncio.to_thread(self._lan_relay.put_file, params)
             if method == "lan.relay.close":
                 return await asyncio.to_thread(self._lan_relay.close_session, params)
+            if method == "lan.relay.http":
+                return await asyncio.to_thread(self._lan_relay.http_forward, params)
+            if method == "lan.relay.ssh_prepare":
+                return await asyncio.to_thread(self._lan_relay.ssh_prepare, params)
+            if method == "lan.relay.ssh_sign":
+                return await asyncio.to_thread(self._lan_relay.ssh_sign, params)
             if method == "lan.relay.ping":
                 return await asyncio.to_thread(self._lan_relay.ping, params)
             if method == "ztp.status":
