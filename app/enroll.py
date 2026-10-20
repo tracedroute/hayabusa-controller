@@ -142,7 +142,13 @@ class HayabusaEnroller:
                 return legacy
         return (self.settings.hayabusa_preauth_key or "").strip()
 
-    async def enroll(self, user: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def enroll(
+        self,
+        user: dict[str, Any] | None = None,
+        *,
+        oauth_ticket: str = "",
+        oauth_sig: str = "",
+    ) -> dict[str, Any]:
         """Contact Hayabusa introducer and obtain mesh + control-plane credentials.
 
         Returns a *public* status dict only. The preauth key is stored for the
@@ -155,6 +161,12 @@ class HayabusaEnroller:
             "peer_type": "controller",
             "user": user or {},
         }
+        # The broker ticket is signed and redeemed only by Core. It lets Core
+        # derive the tenant from the IdP subject instead of trusting the user
+        # JSON supplied by a downloadable controller.
+        if oauth_ticket and oauth_sig:
+            payload["oauth_ticket"] = oauth_ticket
+            payload["oauth_sig"] = oauth_sig
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",

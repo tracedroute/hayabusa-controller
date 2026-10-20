@@ -262,12 +262,11 @@ class HayabusaBridge:
         self._status["ws_url"] = ws_url
         backoff = 1.0
         while not self._stop.is_set():
+            # ``set_ws_urls`` selects the transport for an authenticated
+            # session.  Do not re-add the image's bootstrap URL from the
+            # environment here: it is normally the public WSS endpoint and
+            # would silently bypass the tenant ACL mesh after a reconnect.
             urls: list[str] = []
-            # LAN URL first when mesh CGNAT is flaky (lab/docker).
-            for env_key in ("HAYABUSA_WS_URL", "HAYABUSA_WS_MESH_URL"):
-                c = (os.environ.get(env_key) or "").strip()
-                if c and c not in urls:
-                    urls.append(c)
             for cand in (ws_url, self._ws_url_fallback, getattr(self.settings, "hayabusa_ws_url", "")):
                 c = (cand or "").strip()
                 if c and c not in urls:

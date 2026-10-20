@@ -62,6 +62,10 @@
         <article class="status-tile">
           <p class="label">Public IP</p>
           <p class="value" id="publicIpLabel">{{ public_ip or '—' }}</p>
+          <p class="link-pulse" id="linkPulseOverview" data-state="idle">
+            <span class="link-pulse-dot" aria-hidden="true"></span>
+            <span class="link-pulse-text" id="linkPulseOverviewText">Checking Hayabusa link</span>
+          </p>
         </article>
         <article class="status-tile">
           <p class="label">Mesh VPN</p>
@@ -393,6 +397,10 @@
             <div>
               <h2>Hayabusa connection</h2>
               <p class="section-desc">SD-WAN-style enroll → mesh join → WebSocket grant. Preauth keys stay on the appliance.</p>
+              <p class="link-pulse" id="linkPulse" data-state="idle">
+                <span class="link-pulse-dot" aria-hidden="true"></span>
+                <span class="link-pulse-text" id="linkPulseText">Checking Hayabusa link</span>
+              </p>
             </div>
             <span class="pill pill-idle" id="enrollPillConn">Checking</span>
           </div>
@@ -914,7 +922,7 @@
   <script>window.__hayabusaPublicUrl = {{ hayabusa_public_url|tojson }};</script>
   <script src="/static/js/controller-session-keepalive.js?v=20260808a"></script>
   <script src="/static/js/controller-liability-ack.js?v=20260914b"></script>
-  <script src="/static/js/controller.js?v=20260926i"></script>
+  <script src="/static/js/controller.js?v=20261019c"></script>
   {% include "_ecosystem_blade.html" %}
 </body>
 </html>

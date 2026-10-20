@@ -81,7 +81,21 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         logging.getLogger("hayabusa-controller").warning("ztp edge auto-start skipped: %s", exc)
     logging.getLogger("hayabusa-controller").warning("scheduling boot mesh control plane")
-    task = asyncio.create_task(_boot_mesh_control_plane())
+
+    async def _boot_mesh_with_one_safe_retry() -> None:
+        # At container start the encrypted enrollment vault and tailscaled socket
+        # can become available a moment after Uvicorn's lifespan hook. Retry once
+        # only when no bridge was established; every attempt still requires the
+        # saved enrollment key and keeps the same tenant-scoped identity.
+        await _boot_mesh_control_plane()
+        if bridge.status().get("granted"):
+            return
+        await asyncio.sleep(8)
+        if not bridge.status().get("granted"):
+            logger.warning("retrying boot mesh control plane after startup initialization")
+            await _boot_mesh_control_plane()
+
+    task = asyncio.create_task(_boot_mesh_with_one_safe_retry())
 
     def _boot_done(t: asyncio.Task) -> None:
         try:
@@ -366,21 +380,30 @@ def _control_ws_urls_from_enroll(enrolled: dict[str, Any] | None) -> tuple[str, 
 
 
 def _prefer_mesh_ws_url(*, mesh_url: str, public_url: str, vpn_connected: bool) -> str:
-    """Prefer LAN WS when configured; mesh SOCKS often fails in lab/docker."""
-    lan = (os.environ.get("HAYABUSA_WS_URL") or "").strip()
-    if lan and "100.64." not in lan:
-        return lan
-    if vpn_connected and mesh_url and "100.64." not in mesh_url:
-        return mesh_url
-    if vpn_connected and mesh_url:
-        logger.warning(
-            "mesh is up but CGNAT ws %s may be unreachable; trying public WS %s",
-            mesh_url,
-            public_url,
-        )
-    if public_url:
-        return public_url
-    return mesh_url or lan
+    """Use the user-scoped WireGuard path whenever the mesh is healthy.
+
+    A controller must not quietly move an already-enrolled customer session from
+    the Headscale ACL boundary onto the public bridge.  A public TLS WebSocket
+    remains useful only as an explicitly enabled recovery path before the VPN
+    is available or for an operator-managed outage procedure.
+    """
+    configured = (os.environ.get("HAYABUSA_WS_URL") or "").strip()
+    allow_public_fallback = (os.environ.get("HAYABUSA_ALLOW_PUBLIC_WS_FALLBACK") or "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+    if vpn_connected:
+        if mesh_url:
+            return mesh_url
+        if allow_public_fallback and public_url:
+            logger.warning("mesh VPN is up but no mesh WebSocket was supplied; using explicit public fallback")
+            return public_url
+        logger.error("mesh VPN is up but Core did not supply a mesh WebSocket; public fallback is disabled")
+        return ""
+
+    # Before VPN enrolment there is no ACL-protected transport yet.  A public
+    # endpoint is allowed only to complete the authenticated bootstrap flow.
+    return public_url or configured or mesh_url
 
 
 async def _wait_bridge_ready(*, timeout: float = 25.0) -> dict[str, Any]:
@@ -420,62 +443,44 @@ async def _boot_mesh_control_plane() -> None:
     await asyncio.sleep(1.5)
     try:
         st = enroller.status()
+        # A controller may already have an authenticated mesh session while the
+        # enrollment wrapper is briefly unavailable during startup. Read the
+        # durable, non-secret enrollment record as a recovery source only.
+        # It contains no join key; Core still authenticates every bridge.
+        try:
+            raw = json.loads((_settings.state_dir / "enrollment.json").read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and (raw.get("ok") or raw.get("enrolled")):
+                st = raw
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
         preauth = enroller.load_preauth()
         mesh = str(st.get("mesh_server_url") or _settings.hayabusa_mesh_server_url or "").strip()
-        if not (st.get("enrolled") and preauth and mesh):
+        live_mesh = vpn.status()
+        already_joined = bool(live_mesh.get("connected") and live_mesh.get("ip"))
+        # Older persisted enrollment records used ``ok`` without ``enrolled``.
+        # Both forms are a completed enrollment only when a local join key and
+        # mesh URL are present; this keeps all OAuth providers reconnectable
+        # across controller restarts without accepting an anonymous record.
+        if not ((st.get("enrolled") or st.get("ok")) and mesh and (preauth or already_joined)):
             logger.warning("boot mesh: not enrolled yet — waiting for first sign-in phone-home")
             return
         logger.warning("boot mesh: enrolled — joining VPN and opening control plane over mesh")
         await connection.set_step("enroll", "ok", "Previously enrolled")
-        vpn.configure(mesh_server=mesh, preauth_key=preauth, hostname=_settings.controller_mesh_hostname)
-        await connection.set_step("mesh", "running", "Joining mesh VPN…")
-        vpn_st = await vpn.join_mesh()
+        if already_joined:
+            vpn_st = live_mesh
+        else:
+            vpn.configure(mesh_server=mesh, preauth_key=preauth, hostname=_settings.controller_mesh_hostname)
+            await connection.set_step("mesh", "running", "Joining mesh VPN…")
+            vpn_st = await vpn.join_mesh()
         if not vpn_st.get("connected"):
             detail = vpn_st.get("error") or vpn_st.get("error_code") or "Mesh join failed"
             logger.warning("boot mesh: join failed — %s", detail)
             await connection.set_step("mesh", "failed", str(detail)[:300])
-            # Co-located / lab: still open the control bridge over LAN/public WS.
-            mesh_ws, public_ws = _control_ws_urls_from_enroll(st)
-            lan_ws = (
-                (os.environ.get("HAYABUSA_WS_URL") or "").strip()
-                or str(st.get("ws_url") or "").strip()
-                or public_ws
+            await connection.set_step(
+                "bridge",
+                "failed",
+                "Mesh VPN is unavailable; public controller bridge fallback is disabled",
             )
-            chosen = lan_ws or public_ws or mesh_ws
-            if not chosen:
-                return
-            logger.warning("boot mesh: falling back to non-mesh bridge ws=%s", chosen)
-            if chosen:
-                bridge.settings.hayabusa_ws_url = chosen
-                bridge._status["ws_url"] = chosen
-            bridge._bridge_token = (_settings.controller_bridge_token or "").strip()
-            await connection.set_step("bridge", "running", "Opening control bridge via LAN/public WS…")
-            owner = enroller.load_owner_identity()
-            if owner:
-                bridge_user = {
-                    "username": owner.get("username") or "controller",
-                    "email": owner.get("email") or "",
-                    "provider": owner.get("provider") or "saved",
-                    "sub": owner.get("sub") or owner.get("username") or "",
-                }
-            else:
-                bridge_user = {"username": "controller", "provider": "boot", "sub": "boot"}
-            await bridge.start_for_user(bridge_user, vpn_ip="")
-            br = await _wait_bridge_ready(timeout=25.0)
-            if br.get("granted") and br.get("identity_claimed"):
-                await connection.set_step("bridge", "ok", _bridge_step_detail(br))
-            elif br.get("granted") or br.get("connected"):
-                await connection.set_step(
-                    "bridge",
-                    "pending",
-                    "LAN bridge up — sign in on this controller to claim it for your Hayabusa account",
-                )
-            else:
-                await connection.set_step(
-                    "bridge",
-                    "failed" if br.get("last_error") else "pending",
-                    _bridge_step_detail(br),
-                )
             return
         await connection.set_step("mesh", "ok", "Mesh VPN up")
         mesh_ws, public_ws = _control_ws_urls_from_enroll(st)
@@ -486,8 +491,7 @@ async def _boot_mesh_control_plane() -> None:
             chosen or "(none)",
         )
         if chosen:
-            bridge.settings.hayabusa_ws_url = chosen
-            bridge._status["ws_url"] = chosen
+            bridge.set_ws_urls(chosen)
         # Keep the configured bridge token for a reliable authenticated boot
         # reconnect. Mesh membership remains the primary transport boundary.
         bridge._bridge_token = (_settings.controller_bridge_token or "").strip()
@@ -495,6 +499,8 @@ async def _boot_mesh_control_plane() -> None:
         # Prefer the last authenticated Hayabusa owner so map/branches bind correctly.
         # Never advertise a boot placeholder as a fully linked account controller.
         owner = enroller.load_owner_identity()
+        if not owner and isinstance(st.get("owner_identity"), dict):
+            owner = st.get("owner_identity")
         if owner:
             bridge_user = {
                 "username": owner.get("username") or "controller",
@@ -675,11 +681,33 @@ def _connection_public() -> dict[str, Any]:
     )
 
 
-async def _connect_to_hayabusa(user: dict[str, Any], request: Request | None = None) -> dict[str, Any]:
-    """Phone-home enroll (like SD-WAN → vBond), join mesh VPN, open control WS."""
+async def _connect_to_hayabusa(
+    user: dict[str, Any],
+    request: Request | None = None,
+    enrollment_proof: dict[str, str] | None = None,
+    *,
+    reuse_saved: bool = False,
+) -> dict[str, Any]:
+    """Phone-home enroll (like SD-WAN → vBond), join mesh VPN, open control WS.
+
+    reuse_saved keeps the click on this controller: join from the enrollment
+    already stored here instead of sending the browser to Hayabusa Core.
+    """
     await connection.reset()
-    await connection.set_step("enroll", "running", "Phoning home to Hayabusa…")
-    enrolled = await enroller.enroll(user=user)
+    if reuse_saved:
+        await connection.set_step("enroll", "running", "Using the enrollment saved on this controller…")
+        enrolled = dict(enroller.status())
+        enrolled["ok"] = bool(enrolled.get("enrolled"))
+        if not enrolled["ok"]:
+            enrolled["error"] = "Sign in to this controller with your Hayabusa account, then click Enroll & connect."
+    else:
+        await connection.set_step("enroll", "running", "Phoning home to Hayabusa…")
+        proof = enrollment_proof if isinstance(enrollment_proof, dict) else {}
+        enrolled = await enroller.enroll(
+            user=user,
+            oauth_ticket=str(proof.get("ticket") or ""),
+            oauth_sig=str(proof.get("sig") or ""),
+        )
     if request is not None and isinstance(enrolled.get("capabilities"), dict):
         _apply_capabilities_to_session(request, enrolled.get("capabilities"))
     if not enrolled.get("ok") and not enrolled.get("enrolled"):
@@ -717,6 +745,24 @@ async def _connect_to_hayabusa(user: dict[str, Any], request: Request | None = N
         detail = vpn_st.get("error") or vpn_st.get("error_code") or "Mesh join failed"
         fix = vpn_st.get("fix") or ""
         await connection.set_step("mesh", "failed", f"{detail}" + (f" — {fix}" if fix else ""))
+        await connection.set_step(
+            "bridge",
+            "failed",
+            "Mesh VPN is unavailable; public controller bridge fallback is disabled",
+        )
+        return {
+            "enroll": public_enroll_view(enrolled),
+            "vpn": vpn_st,
+            "bridge": bridge.status(),
+            "connection": _connection_public(),
+            "capabilities": {
+                "can_manual_mesh_override": bool(
+                    (enrolled.get("capabilities") or {}).get("can_manual_mesh_override")
+                )
+                if isinstance(enrolled.get("capabilities"), dict)
+                else False
+            },
+        }
 
     chosen = _prefer_mesh_ws_url(
         mesh_url=mesh_ws,
@@ -724,9 +770,14 @@ async def _connect_to_hayabusa(user: dict[str, Any], request: Request | None = N
         vpn_connected=bool(vpn_st.get("connected")),
     )
     if chosen:
-        # Prefer mesh when healthy; always keep public WSS as failover if mesh dial fails.
-        bridge.set_ws_urls(chosen, fallback=public_ws if public_ws and public_ws != chosen else "")
-    # LAN / public failover still needs the bridge token when Hayabusa requires it.
+        allow_public_fallback = (os.environ.get("HAYABUSA_ALLOW_PUBLIC_WS_FALLBACK") or "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        bridge.set_ws_urls(
+            chosen,
+            fallback=public_ws if allow_public_fallback and public_ws and public_ws != chosen else "",
+        )
+    # A legacy token may still be supplied for an explicitly enabled recovery path.
     bridge._bridge_token = (_settings.controller_bridge_token or "").strip()
 
     await connection.set_step("bridge", "running", "Opening control bridge via mesh VPN…")
@@ -1334,6 +1385,7 @@ async def _finish_login(
     sub: str = "",
     mfa_ok: bool | None = None,
     mfa_checked: bool = False,
+    enrollment_proof: dict[str, str] | None = None,
 ) -> RedirectResponse:
     now = int(time.time())
     email_n = str(email or "").strip()
@@ -1474,6 +1526,7 @@ async def _finish_login(
     # Phone-home in background so login is not blocked on mesh join (can take ~30–90s).
     # Progress streams to the dashboard via /ws/status (connection pipeline).
     user = _user(request)
+    proof = enrollment_proof if isinstance(enrollment_proof, dict) else {}
     skip_connect = (os.environ.get("CONTROLLER_SKIP_POST_LOGIN_CONNECT") or "").strip().lower() in {
         "1",
         "true",
@@ -1489,7 +1542,7 @@ async def _finish_login(
             # Capture identity now; do not rely on request.session after redirect returns.
             await _refresh_user_capabilities(request, user)
             enroller.save_owner_identity(user)
-            await _connect_to_hayabusa(user, request=request)
+            await _connect_to_hayabusa(user, request=request, enrollment_proof=proof)
         except Exception as exc:  # noqa: BLE001
             logger.warning("hayabusa phone-home after login failed: %s", exc)
             await connection.set_step("enroll", "failed", str(exc)[:300])
@@ -3079,6 +3132,7 @@ async def auth_oauth_finish(request: Request) -> RedirectResponse:
         sub=sub,
         mfa_ok=mfa_ok,
         mfa_checked=mfa_checked,
+        enrollment_proof={"ticket": ticket, "sig": sig},
     )
 
 
@@ -4805,25 +4859,114 @@ async def api_local_reconnect_bridge(request: Request) -> JSONResponse:
     )
 
 
+async def _ensure_hayabusa_link(user: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Make the Hayabusa link without leaving this controller page."""
+    vpn_st = vpn.status()
+    br_st = bridge.status()
+    saved = dict(enroller.status())
+    if saved.get("enrolled") and vpn_st.get("connected") and br_st.get("granted"):
+        saved["ok"] = True
+        return {
+            "ok": True,
+            "enroll": saved,
+            "vpn": vpn_st,
+            "bridge": br_st,
+            "connection": _connection_public(),
+            "capabilities": {
+                "can_manual_mesh_override": _session_can_manual_mesh_override(request),
+            },
+        }
+    if not saved.get("enrolled"):
+        return {
+            "ok": False,
+            "error": "Sign in to this controller with your Hayabusa account, then click Enroll & connect.",
+            "enroll": saved,
+            "vpn": vpn_st,
+            "bridge": br_st,
+            "connection": _connection_public(),
+            "capabilities": {
+                "can_manual_mesh_override": _session_can_manual_mesh_override(request),
+            },
+        }
+    return await _connect_to_hayabusa(user, request=request, reuse_saved=True)
+
+
+@app.get("/auth/enroll/start")
+async def auth_enroll_start(request: Request) -> RedirectResponse:
+    """Stay on the controller. Older bookmarks used to leave for Hayabusa Core."""
+    if not _authed(request):
+        return RedirectResponse("/login?next=/#connection", status_code=302)
+    result = await _ensure_hayabusa_link(_user(request), request)
+    enroll_ok = bool((result.get("enroll") or {}).get("ok") or (result.get("enroll") or {}).get("enrolled"))
+    mesh_ok = bool((result.get("vpn") or {}).get("connected"))
+    bridge_ok = bool((result.get("bridge") or {}).get("granted"))
+    if enroll_ok and mesh_ok and bridge_ok:
+        return RedirectResponse("/?connected=1#connection", status_code=302)
+    err = str(result.get("error") or (result.get("enroll") or {}).get("error") or "Connection was not completed")
+    return RedirectResponse("/?error=" + urllib.parse.quote(err) + "#connection", status_code=302)
+
+
+@app.get("/auth/enroll/finish")
+async def auth_enroll_finish(request: Request) -> RedirectResponse:
+    """Accept the Core-signed ticket and phone home. This is the Enroll & connect completion."""
+    if not _authed(request):
+        return RedirectResponse("/login?next=/auth/enroll/start", status_code=302)
+    ticket = (request.query_params.get("ticket") or "").strip()
+    sig = (request.query_params.get("sig") or "").strip()
+    state = (request.query_params.get("state") or "").strip()
+    expect = str(request.session.get("enroll_state") or "")
+    request.session.pop("enroll_state", None)
+    if not ticket or not sig or not state or not expect or not secrets.compare_digest(state, expect):
+        return RedirectResponse(
+            "/?error=" + urllib.parse.quote("Enrollment was not completed. Try Enroll & connect again.") + "#connection",
+            status_code=302,
+        )
+    result = await _connect_to_hayabusa(
+        _user(request),
+        request=request,
+        enrollment_proof={"ticket": ticket, "sig": sig},
+    )
+    enroll_ok = bool((result.get("enroll") or {}).get("ok") or (result.get("enroll") or {}).get("enrolled"))
+    if not enroll_ok:
+        err = str((result.get("enroll") or {}).get("error") or "Enrollment failed")
+        return RedirectResponse("/?error=" + urllib.parse.quote(err) + "#connection", status_code=302)
+    return RedirectResponse("/?enrolled=1#connection", status_code=302)
+
+
 @app.post("/api/vpn/enroll")
 async def api_vpn_enroll(request: Request) -> JSONResponse:
-    """Re-run phone-home enrollment against hayabusa.tracedroute.net.
+    """Connect from this page. A signed ticket still enrolls; otherwise reuse the saved enrollment.
 
     Response never includes mesh preauth/join keys — those stay on this appliance.
     """
     if not _authed(request):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    result = await _connect_to_hayabusa(_user(request), request=request)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    ticket = str(body.get("oauth_ticket") or "").strip()
+    sig = str(body.get("oauth_sig") or "").strip()
+    if ticket and sig:
+        result = await _connect_to_hayabusa(
+            _user(request),
+            request=request,
+            enrollment_proof={"ticket": ticket, "sig": sig},
+        )
+    else:
+        result = await _ensure_hayabusa_link(_user(request), request)
     vpn_st = result.get("vpn") or {}
     br_st = result.get("bridge") or {}
     conn = result.get("connection") or _connection_public()
-    enroll_ok = bool((result.get("enroll") or {}).get("ok"))
+    enroll_ok = bool((result.get("enroll") or {}).get("ok") or (result.get("enroll") or {}).get("enrolled"))
     mesh_ok = bool(vpn_st.get("connected"))
     bridge_ok = bool(br_st.get("granted"))
     err = ""
     err_code = vpn_st.get("error_code") or None
     if not enroll_ok:
-        err = str((result.get("enroll") or {}).get("error") or "Enrollment failed")
+        err = str(result.get("error") or (result.get("enroll") or {}).get("error") or "Enrollment failed")
     elif not mesh_ok:
         err = str(vpn_st.get("error") or "Mesh join failed after enrollment")
     elif not bridge_ok:

@@ -92,14 +92,47 @@ def socks5_connect_sync(dest_host: str, dest_port: int, *, timeout: float = 15.0
     return s
 
 
+def _controller_mesh_ipv4() -> str:
+    """IPv4 of this appliance's tailscaled, not another Tailscale on the host."""
+    import subprocess
+
+    sock = (
+        os.environ.get("TS_SOCKET")
+        or os.environ.get("TAILSCALE_SOCKET")
+        or "/var/run/tailscale/controller.sock"
+    ).strip()
+    cmd = ["tailscale"]
+    if sock:
+        cmd.extend(["--socket", sock])
+    cmd.extend(["ip", "-4"])
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for line in out.splitlines():
+        ip = line.strip()
+        if ip:
+            return ip
+    return ""
+
+
 def _kernel_has_mesh_route() -> bool:
+    """True only when the kernel route belongs to this controller's tailnet.
+
+    A host-network appliance can share the machine with a different Tailscale
+    that also uses 100.64.0.0/10. Dialing that route reaches the local stack
+    instead of Hayabusa Core.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.connect(("100.64.0.1", 1))
             local = probe.getsockname()[0]
-            return str(local).startswith("100.")
     except OSError:
         return False
+    if not str(local).startswith("100."):
+        return False
+    mine = _controller_mesh_ipv4()
+    return bool(mine) and mine == str(local)
 
 
 async def _direct_tcp(dest_host: str, dest_port: int, *, timeout: float) -> socket.socket:

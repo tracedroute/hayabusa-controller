@@ -319,6 +319,47 @@
       setText("introducerUrl", st.hayabusa_public_url);
       setText("introducerUrlConn", st.hayabusa_public_url);
     }
+    paintLinkPulse(st);
+  }
+
+  var lastPublicIp = "";
+  var lastLinkReady = null;
+
+  function paintLinkPulse(st) {
+    var loc = st.location || {};
+    var br = st.bridge || {};
+    var ip = String(st.public_ip || st.wan_public_ip || loc.public_ip || loc.wan_public_ip || br.public_ip || "").trim();
+    if (ip) lastPublicIp = ip;
+    var shown = ip || lastPublicIp;
+    if (shown) {
+      setText("publicIp", shown);
+      setText("publicIpLabel", shown);
+      setText("publicIpOverview", shown);
+    }
+    var sawVpn = !!(st.vpn && typeof st.vpn === "object");
+    var sawBridge = !!(st.bridge && typeof st.bridge === "object");
+    var sawConn = !!(st.connection && typeof st.connection === "object");
+    if (sawConn) {
+      lastLinkReady = !!st.connection.ready;
+    } else if (sawVpn && sawBridge) {
+      lastLinkReady = !!(st.vpn.connected && st.bridge.granted);
+    } else if (sawBridge && !st.bridge.granted) {
+      lastLinkReady = false;
+    } else if (sawVpn && !st.vpn.connected && !sawBridge) {
+      lastLinkReady = false;
+    }
+    var ready = lastLinkReady === true;
+    var state = ready ? "live" : (lastLinkReady === false ? "down" : "idle");
+    var label = ready
+      ? ("Live link to Hayabusa" + (shown ? " · " + shown : ""))
+      : (lastLinkReady === false && shown ? ("Not linked · " + shown) : "Checking Hayabusa link");
+    ["linkPulse", "linkPulseOverview"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.setAttribute("data-state", state);
+    });
+    setText("linkPulseText", label);
+    setText("linkPulseOverviewText", label);
   }
 
   var enrollBtn = document.getElementById("enrollBtn");
@@ -329,21 +370,9 @@
         var res = await api("/api/vpn/enroll", { method: "POST", body: "{}" });
         paintStatus(res);
         paintStatus(await api("/api/status"));
-        if (res.ok && res.bridge && res.bridge.granted) {
-          toast("Enrolled and control bridge granted", "ok");
-        } else if (res.vpn && res.vpn.connected && !(res.bridge && res.bridge.granted)) {
-          var meshOnly =
-            res.error ||
-            "Mesh VPN is up, but the control bridge is not granted — not fully connected";
-          if (res.fix) meshOnly += " — " + res.fix;
-          toast(meshOnly, "err");
-        } else {
-          var detail = res.error || (res.vpn && res.vpn.error) || "Enrollment finished with errors";
-          if (res.fix) detail += " — " + res.fix;
-          toast(detail, "err");
-        }
+        toast(res.ok ? "Connected to Hayabusa" : (res.error || "Connection was not completed"), res.ok ? "ok" : "err");
       } catch (err) {
-        toast(err.message || "Enrollment failed", "err");
+        toast(err.message || "Connection was not completed", "err");
         try { paintStatus(await api("/api/status")); } catch (_) {}
       } finally {
         enrollBtn.disabled = false;
@@ -1230,7 +1259,7 @@
         // Dashboard form present: require interface + save. Admin-only: use saved config.
         if (ifaceEl && !ifaceVal) {
           setZtpSwitches(false);
-          toast("Pick a LAN interface on Dashboard → ZTP & DHCP first", "err");
+          toast("Pick a LAN interface on Administration → ZTP & DHCP first", "err");
           return;
         }
         if (document.getElementById("ztpForm")) {

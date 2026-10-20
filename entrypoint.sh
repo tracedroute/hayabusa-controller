@@ -2,10 +2,41 @@
 set -euo pipefail
 
 DATA_DIR="${CONTROLLER_DATA_DIR:-/var/lib/hayabusa-controller}"
+mkdir -p "$DATA_DIR" "$DATA_DIR/secrets" "$DATA_DIR/state" "$DATA_DIR/tailscale"
+# Print and persist the absolute path. A relative CONTROLLER_DATA_DIR must not
+# show up as a partial bootstrap.env location during first-run setup.
+DATA_DIR="$(cd "$DATA_DIR" && pwd -P)"
 WS_DIR="${CONTROLLER_DEVOPS_WORKSPACE:-$DATA_DIR/iac/workspace}"
 DEFAULTS="${CONTROLLER_DEVOPS_DEFAULTS:-/opt/hayabusa-controller/devops_iac_defaults}"
 BOOTSTRAP="${DATA_DIR}/bootstrap.env"
-mkdir -p "$DATA_DIR" "$DATA_DIR/secrets" "$WS_DIR" "$DATA_DIR/state" "$DATA_DIR/tailscale"
+# Docker volume mounts hide the host directory. /proc/self/mountinfo root is
+# the full path on the Linux machine; the container mount point is not.
+BOOTSTRAP_PRINT="$(python - "$DATA_DIR" <<'PY'
+import os, sys
+dest = os.path.realpath(sys.argv[1])
+host = dest
+try:
+    with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            root, mnt = parts[3], parts[4]
+            try:
+                same = os.path.realpath(mnt) == dest
+            except OSError:
+                same = mnt == dest
+            if not same:
+                continue
+            if root.startswith("/") and root not in {"/", dest}:
+                host = root
+except OSError:
+    pass
+print(os.path.join(host, "bootstrap.env"))
+PY
+)" || true
+BOOTSTRAP_PRINT="${BOOTSTRAP_PRINT:-$BOOTSTRAP}"
+mkdir -p "$WS_DIR"
 chmod 700 "$DATA_DIR" || true
 
 # Zero-config: generate strong secrets on first boot, persist in the data volume.
@@ -36,8 +67,8 @@ PY
  Hayabusa Controller
  Open:     http://${lan_ip}:${CONTROLLER_LISTEN_PORT}
  Username: admin
- Password: ${pw:-"(missing — check ${BOOTSTRAP})"}
- Saved:    ${BOOTSTRAP}
+ Password: ${pw:-"(missing — check ${BOOTSTRAP_PRINT})"}
+ Saved:    ${BOOTSTRAP_PRINT}
  After first sign-in the password is invalid. Whitelist GitHub (preferred), Google, or Discord with 2FA as Owner, then finish /setup.
 ============================================================
 
