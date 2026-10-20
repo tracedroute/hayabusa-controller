@@ -68,17 +68,8 @@ RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
-# Gameplan OpenTofu runs on this appliance after LAN Approve so vault values
-# never leave the controller. Ansible stays on Hayabusa Core.
-ARG TOFU_VERSION=1.10.6
-ARG TOFU_SHA256=15b7bed76420b50da3e121769c43341df8cd57d751ca14e6dbe9c850124c6dac
-RUN curl -fsSL -o /tmp/tofu.zip \
-      "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip" \
- && echo "${TOFU_SHA256}  /tmp/tofu.zip" | sha256sum -c - \
- && python -c "import zipfile; zipfile.ZipFile('/tmp/tofu.zip').extract('tofu','/usr/local/bin')" \
- && chmod 755 /usr/local/bin/tofu \
- && rm -f /tmp/tofu.zip \
- && tofu version
+# Ansible / OpenTofu are NOT installed here. Hayabusa Core runs those tools after
+# LAN Approve; this appliance keeps the vault + lan.relay only (openssh-client).
 
 # BSD-3-Clause Tailscale client, rebuilt with patched Go module deps (not the
 # vulnerable stock pkgs.tailscale.com binaries).
